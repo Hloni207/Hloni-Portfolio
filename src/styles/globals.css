@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #F6F5F1;
+    color: #111111;
+  }
+
+  ::selection {
+    background-color: #111111;
+    color: #F6F5F1;
+  }
+}
