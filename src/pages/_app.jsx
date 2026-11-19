@@ -10,7 +10,10 @@ export default function App({ Component, pageProps }) {
         <title>Hloni — Portfolio</title>
         <meta name="description" content="Personal portfolio of Hloni — Robotics, Engineering & Digital Products" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
+        {/* Profile photo as website tab favicon */}
+        <link rel="icon" type="image/jpeg" href="/media/profileimage.jpg" />
+        <link rel="shortcut icon" href="/media/profileimage.jpg" />
+        <link rel="apple-touch-icon" href="/media/profileimage.jpg" />
       </Head>
       <Component {...pageProps} />
     </PortfolioProvider>
