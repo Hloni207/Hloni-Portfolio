@@ -7,8 +7,8 @@ export const initialPortfolioData = {
     avatar: "/media/profileimage.jpg",
     headlinePart1: "Comming to",
     headlinePart2: "Know Me.",
-    resumeUrl: "/sample-resume.pdf",
-    resumeFilename: "Hloni_Resume.pdf",
+    resumeUrl: "/media/resume.pdf",
+    resumeFilename: "resume.pdf",
   },
   
   projectsSection: {

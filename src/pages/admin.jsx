@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ArrowLeft, Plus, Trash2, Save, FileText, Upload, 
   ExternalLink, Eye, RefreshCw, Download, Sparkles, Briefcase, 
   Layers, User, Mail, CheckCircle2, Image as ImageIcon, ArrowUpRight,
-  Pencil, X
+  Pencil, X, GitBranch, CloudUpload, Loader2, Key, AlertCircle
 } from 'lucide-react';
 import { usePortfolio } from '@/context/PortfolioContext';
 
@@ -25,13 +25,61 @@ export default function AdminPage() {
     deleteContactLink,
     updateResume,
     resetToDefaults,
-    exportData
+    exportData,
+    syncToGitHub,
+    isSyncing,
+    pendingMediaFiles,
+    addPendingMediaFile
   } = usePortfolio();
 
-  const [activeTab, setActiveTab] = useState('work'); // 'work', 'about', 'experience', 'skills', 'contact', 'resume', 'backup'
+  const [activeTab, setActiveTab] = useState('work'); // 'work', 'about', 'experience', 'skills', 'contact', 'resume', 'backup', 'github'
   const [saveToast, setSaveToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('Changes saved live!');
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [githubToken, setGithubToken] = useState('');
+  const [syncStatus, setSyncStatus] = useState(null); // { type: 'success' | 'error', message: string }
+
+  // Load saved token from localStorage if available
+  useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem('hloni_github_pat');
+      if (savedToken) setGithubToken(savedToken);
+    } catch (e) {}
+  }, []);
+
+  const saveGithubToken = (token) => {
+    setGithubToken(token);
+    try {
+      if (token) {
+        localStorage.setItem('hloni_github_pat', token);
+      } else {
+        localStorage.removeItem('hloni_github_pat');
+      }
+      showNotification('GitHub Token saved!');
+    } catch (e) {}
+  };
+
+  const handlePushToGitHub = async () => {
+    setSyncStatus(null);
+    showNotification('Connecting to GitHub...');
+    const res = await syncToGitHub(githubToken);
+    if (res.success) {
+      setSyncStatus({
+        type: 'success',
+        message: res.result?.message || 'Pushed to GitHub! Vercel is now deploying your changes live to the world.'
+      });
+      showNotification('🚀 Successfully published to GitHub & Live Site!');
+    } else {
+      setSyncStatus({
+        type: 'error',
+        message: res.error || 'Failed to sync to GitHub.'
+      });
+      if (res.error?.includes('NO_TOKEN_OR_GIT')) {
+        setActiveTab('github');
+      }
+      showNotification('Sync failed. Please check the GitHub Sync tab.');
+    }
+  };
 
   // Editing states for experiences & projects
   const [editingExpId, setEditingExpId] = useState(null);
@@ -118,27 +166,25 @@ export default function AdminPage() {
         });
 
         const result = await res.json();
-        if (result.success) {
-          if (targetForm === 'work') {
-            setWorkForm((prev) => ({
-              ...prev,
-              image: result.url,
-              imageFileName: result.fileName,
-            }));
-          } else if (targetForm === 'avatar') {
-            setAboutForm((prev) => ({ ...prev, avatar: result.url }));
-            updateProfile({ avatar: result.url });
-          } else if (targetForm === 'experience') {
-            setExperienceForm((prev) => ({ ...prev, image: result.url }));
-          }
-          showNotification(`Image saved to src/media/${result.fileName}`);
-        } else {
-          // Fallback to local base64
-          if (targetForm === 'work') {
-            setWorkForm((prev) => ({ ...prev, image: base64Data, imageFileName: file.name }));
-          }
-          showNotification('Saved image preview');
+        const finalFileName = result.fileName || `${Date.now()}_${file.name}`;
+        const finalUrl = result.success ? result.url : `/media/${finalFileName}`;
+
+        // Register for GitHub sync
+        addPendingMediaFile({ name: finalFileName, base64Content: base64Data });
+
+        if (targetForm === 'work') {
+          setWorkForm((prev) => ({
+            ...prev,
+            image: finalUrl,
+            imageFileName: finalFileName,
+          }));
+        } else if (targetForm === 'avatar') {
+          setAboutForm((prev) => ({ ...prev, avatar: finalUrl }));
+          updateProfile({ avatar: finalUrl });
+        } else if (targetForm === 'experience') {
+          setExperienceForm((prev) => ({ ...prev, image: finalUrl }));
         }
+        showNotification(`Image saved! Click "Push to GitHub" to publish live.`);
       } catch (err) {
         console.error('Upload failed, using data-url', err);
         if (targetForm === 'work') {
@@ -299,6 +345,9 @@ export default function AdminPage() {
     reader.onload = async (uploadEvent) => {
       try {
         const base64Data = uploadEvent.target.result;
+        // Track file for GitHub sync
+        addPendingMediaFile({ name: 'resume.pdf', base64Content: base64Data });
+
         const res = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -308,11 +357,11 @@ export default function AdminPage() {
           }),
         });
         const result = await res.json();
-        const savedUrl = result.success ? result.url : base64Data;
+        const savedUrl = result.success ? result.url : '/media/resume.pdf';
         updateResume(savedUrl, 'resume.pdf');
         setResumeUrlInput(savedUrl);
         setResumeFileNameInput('resume.pdf');
-        showNotification('Resume PDF uploaded to src/media/resume.pdf!');
+        showNotification('Resume PDF uploaded! Click "Push to GitHub" to make it live for all devices.');
       } catch (err) {
         updateResume(uploadEvent.target.result, file.name);
         showNotification('Resume saved locally!');
@@ -348,13 +397,56 @@ export default function AdminPage() {
             href="/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#111111] text-white hover:bg-neutral-800 px-4 py-2 rounded-full transition-all shadow-sm"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-black/10 hover:border-black text-black px-4 py-2 rounded-full transition-all shadow-sm"
           >
             <span>Live Preview</span>
             <ArrowUpRight className="w-3.5 h-3.5" />
           </a>
+
+          <button
+            onClick={handlePushToGitHub}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-2 text-xs font-bold bg-[#111111] hover:bg-neutral-800 text-white px-5 py-2.5 rounded-full transition-all shadow-md active:scale-95 disabled:opacity-60"
+            title="Commit all changes to GitHub so they appear on all devices worldwide"
+          >
+            {isSyncing ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Publishing to GitHub...</span>
+              </>
+            ) : (
+              <>
+                <CloudUpload className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Push to GitHub (Live Site)</span>
+              </>
+            )}
+          </button>
         </div>
       </header>
+
+      {/* Sync Status Banner */}
+      {syncStatus && (
+        <div className={`w-full px-6 md:px-12 lg:px-16 py-3 border-b text-xs md:text-sm font-medium flex items-center justify-between ${
+          syncStatus.type === 'success' 
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
+            : 'bg-amber-50 text-amber-900 border-amber-200'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            {syncStatus.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            )}
+            <span>{syncStatus.message}</span>
+          </div>
+          <button 
+            onClick={() => setSyncStatus(null)}
+            className="p-1 rounded hover:bg-black/5 text-neutral-500"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {saveToast && (
@@ -375,7 +467,8 @@ export default function AdminPage() {
             { id: 'skills', label: '04 / Skills', icon: Sparkles },
             { id: 'contact', label: '05 / Contact Links', icon: Mail },
             { id: 'resume', label: '06 / Resume PDF', icon: FileText },
-            { id: 'backup', label: '07 / Backup & Sync', icon: Download },
+            { id: 'backup', label: '07 / Backup & Export', icon: Download },
+            { id: 'github', label: '08 / Sync to GitHub 🚀', icon: GitBranch },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1460,6 +1553,18 @@ export default function AdminPage() {
                   className="hidden"
                 />
               </label>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handlePushToGitHub}
+                  disabled={isSyncing}
+                  className="inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-7 py-3.5 rounded-full font-semibold text-sm transition-all shadow-md disabled:opacity-60"
+                >
+                  {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4 text-emerald-400" />}
+                  <span>Push Resume to GitHub (Live Site)</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1516,6 +1621,118 @@ export default function AdminPage() {
                   <RefreshCw className="w-4 h-4" />
                   <span>Restore Initial Defaults</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 8: SYNC TO GITHUB & LIVE SITE */}
+        {activeTab === 'github' && (
+          <div className="mt-10 bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-sm space-y-8">
+            <div>
+              <span className="text-xs font-semibold tracking-widest uppercase text-neutral-400 block mb-1">
+                08 / Production Deployment
+              </span>
+              <h2 className="text-3xl font-extrabold tracking-tight text-[#111111]">
+                Sync to GitHub & Live Site
+              </h2>
+              <p className="text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
+                When you make edits, add projects, or upload a resume in this admin panel, click <strong>Push to GitHub</strong> to commit all changes directly to your repository (<code>Hloni207/Hloni-Portfolio</code>). Vercel then automatically rebuilds and deploys them to <code>hloni.vercel.app</code> so every visitor on any phone or computer sees them!
+              </p>
+            </div>
+
+            {/* Big Action Card */}
+            <div className="p-8 rounded-3xl bg-[#0F1010] text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+              <div className="space-y-1">
+                <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Repository: Hloni207/Hloni-Portfolio
+                </span>
+                <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
+                  Publish All Content Live
+                </h3>
+                <p className="text-xs sm:text-sm text-neutral-400 max-w-lg">
+                  Applies projects ({data.projects?.length || 0}), experiences ({data.experiences?.length || 0}), skills, resume PDF, and images to GitHub main branch.
+                </p>
+              </div>
+
+              <button
+                onClick={handlePushToGitHub}
+                disabled={isSyncing}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-white text-black hover:bg-neutral-200 px-8 py-4 rounded-full font-bold text-sm sm:text-base transition-all shadow-lg active:scale-95 disabled:opacity-50 flex-shrink-0"
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin text-black" />
+                    <span>Publishing to GitHub...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudUpload className="w-5 h-5 text-emerald-600" />
+                    <span>Push to GitHub Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Token Configuration for Mobile & Remote Device Access */}
+            <div className="p-6 md:p-8 rounded-2xl bg-[#F6F5F1] border border-black/10 space-y-6">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-black/5 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Key className="w-5 h-5 text-neutral-700" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-neutral-900">
+                    GitHub Personal Access Token (For Mobile / Remote Devices)
+                  </h4>
+                  <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+                    If you are editing from your phone or another computer (on Vercel), enter your GitHub Token once. It allows your browser to commit changes directly to your GitHub repo without needing a local Git installation!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (GitHub Classic Token with 'repo' scope)"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  className="flex-1 px-5 py-3.5 rounded-2xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => saveGithubToken(githubToken)}
+                  className="inline-flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-6 py-3.5 rounded-2xl font-semibold text-sm transition-all shadow-sm"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Token</span>
+                </button>
+                {githubToken && (
+                  <button
+                    type="button"
+                    onClick={() => saveGithubToken('')}
+                    className="px-4 py-3.5 rounded-2xl border border-black/10 text-neutral-500 hover:text-red-600 text-xs font-semibold"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Instructions Guide */}
+              <div className="pt-4 border-t border-black/10 text-xs text-neutral-600 space-y-2">
+                <p className="font-bold text-neutral-800 uppercase tracking-wider">
+                  How to generate your free GitHub Token in 30 seconds:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 pl-1">
+                  <li>
+                    Open <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-black">github.com/settings/tokens/new</a>
+                  </li>
+                  <li>Give it a note like <strong>Portfolio CMS</strong> and check the <strong>repo</strong> box (Full control of repositories).</li>
+                  <li>Scroll down and click <strong>Generate token</strong>, then copy and paste it into the box above.</li>
+                </ol>
+                <p className="text-[11px] text-neutral-400 mt-2">
+                  * Note: When running on your local computer via <code>npm run dev</code>, your local Git is used automatically without requiring a token!
+                </p>
               </div>
             </div>
           </div>
