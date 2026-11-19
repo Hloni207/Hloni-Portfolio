@@ -8,6 +8,13 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background-color: #F6F5F1;
     color: #111111;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    overflow-x: hidden;
+    min-height: 100svh;
   }
 
   ::selection {

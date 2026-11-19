@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Calendar, Briefcase, Building2 } from 'lucide-react';
+import { X, Calendar, Building2 } from 'lucide-react';
 
 export default function ExperienceModal({ experience, isOpen, onClose }) {
   useEffect(() => {
@@ -20,13 +20,16 @@ export default function ExperienceModal({ experience, isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 md:p-10 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] bg-[#161718] border border-neutral-800 rounded-2xl shadow-2xl overflow-y-auto text-white animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-2xl max-h-[90vh] bg-[#161718] border border-neutral-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-y-auto text-white animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile drag handle */}
+        <div className="w-10 h-1 bg-neutral-700 rounded-full mx-auto mt-3 sm:hidden" />
+
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -38,7 +41,7 @@ export default function ExperienceModal({ experience, isOpen, onClose }) {
 
         {/* Experience Image if available */}
         {experience.image && (
-          <div className="w-full h-56 sm:h-64 relative overflow-hidden rounded-t-2xl bg-neutral-900 border-b border-neutral-800">
+          <div className="w-full h-48 sm:h-64 relative overflow-hidden rounded-t-3xl bg-neutral-900 border-b border-neutral-800 mt-2 sm:mt-0">
             <img
               src={experience.image}
               alt={experience.name}
@@ -51,30 +54,30 @@ export default function ExperienceModal({ experience, isOpen, onClose }) {
           </div>
         )}
 
-        <div className="p-6 sm:p-8 space-y-6">
+        <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
           {/* Header */}
-          <div className="space-y-2">
+          <div className="space-y-1.5 sm:space-y-2 pr-6">
             <div className="flex items-center gap-2 text-xs font-semibold tracking-wider uppercase text-neutral-400">
               <Building2 className="w-4 h-4 text-emerald-400" />
               <span>{experience.name}</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
               {experience.position}
             </h2>
           </div>
 
           {/* Date Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 text-sm font-medium text-neutral-300">
-            <Calendar className="w-4 h-4 text-emerald-400" />
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 text-xs sm:text-sm font-medium text-neutral-300">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <span>{experience.date}</span>
           </div>
 
           {/* Full Description */}
-          <div className="space-y-3 pt-2 border-t border-neutral-800">
+          <div className="space-y-2.5 pt-2 border-t border-neutral-800">
             <h3 className="text-xs font-semibold tracking-widest uppercase text-neutral-400">
               Full Experience Description
             </h3>
-            <p className="text-base sm:text-lg text-neutral-300 leading-relaxed whitespace-pre-line">
+            <p className="text-sm sm:text-base md:text-lg text-neutral-300 leading-relaxed whitespace-pre-line">
               {experience.description || "No full description provided."}
             </p>
           </div>
@@ -83,7 +86,7 @@ export default function ExperienceModal({ experience, isOpen, onClose }) {
           <div className="pt-4 border-t border-neutral-800 flex justify-end">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-full bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors"
+              className="w-full sm:w-auto px-6 py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors text-center"
             >
               Done
             </button>

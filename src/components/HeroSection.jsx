@@ -15,32 +15,34 @@ export default function HeroSection() {
   };
 
   return (
-    <section className="w-full pt-10 pb-20 md:pb-28 px-6 md:px-12 lg:px-16 flex flex-col justify-between min-h-[calc(100vh-90px)]">
+    <section className="w-full pt-4 sm:pt-8 md:pt-10 pb-16 sm:pb-20 md:pb-28 px-5 sm:px-8 md:px-12 lg:px-16 flex flex-col justify-between min-h-[calc(100svh-80px)]">
       {/* Top status bar: Tag & Live Time */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-black/5 pb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-black/5 pb-6 sm:pb-8">
         <div className="flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-          <span className="text-xs md:text-sm font-semibold tracking-wider uppercase text-[#333333]">
+          <span className="text-[11px] sm:text-xs md:text-sm font-semibold tracking-wider uppercase text-[#333333]">
             {profile.titleTag || "Welcome to my personal Portfolio"}
           </span>
         </div>
 
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <LiveClock />
         </div>
       </div>
 
-      {/* Main Massive Headline with Profile Photo next to it on the right side */}
-      <div className="my-12 md:my-20 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8 lg:gap-12">
-        <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-[108px] xl:text-[118px] leading-[0.94] tracking-[-0.05em] font-extrabold select-none flex-1">
-          <span className="block text-[#111111]">{profile.headlinePart1 || "Comming to"}</span>
-          <span className="block text-[#8c8c88] transition-colors">{profile.headlinePart2 || "Know Me."}</span>
-        </h1>
+      {/* Main Massive Headline with Profile Photo: Responsive Layout */}
+      <div className="my-8 sm:my-12 md:my-20 flex flex-col lg:flex-row items-center lg:items-center justify-between gap-8 lg:gap-12">
+        <div className="w-full lg:flex-1 text-left">
+          <h1 className="text-[44px] leading-[0.96] sm:text-6xl md:text-7xl lg:text-[108px] xl:text-[118px] md:leading-[0.94] tracking-[-0.05em] font-extrabold select-none">
+            <span className="block text-[#111111]">{profile.headlinePart1 || "Comming to"}</span>
+            <span className="block text-[#8c8c88] transition-colors">{profile.headlinePart2 || "Know Me."}</span>
+          </h1>
+        </div>
 
-        {/* 1 & 2. Profile photo next to "Comming to Know me" on the right side using src/media/profileimage.jpg */}
-        <div className="flex-shrink-0 self-center lg:self-auto">
+        {/* Profile photo: Centerpiece on mobile, right side on desktop */}
+        <div className="flex-shrink-0 self-center lg:self-auto my-2 sm:my-0">
           <div className="relative group">
-            <div className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 lg:w-72 lg:h-72 rounded-full overflow-hidden border-[6px] border-white shadow-2xl ring-1 ring-black/10 bg-[#e5e1d6] transition-transform duration-500 group-hover:scale-105">
+            <div className="w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 lg:w-72 lg:h-72 rounded-full overflow-hidden border-[5px] sm:border-[6px] border-white shadow-2xl ring-1 ring-black/10 bg-[#e5e1d6] transition-transform duration-500 hover:scale-105">
               <img
                 src={profile.avatar || "/media/profileimage.jpg"}
                 alt={profile.fullName || "Hloni"}
@@ -61,18 +63,18 @@ export default function HeroSection() {
       </div>
 
       {/* Bottom Row: Bio text & Explore selected work button */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-8 pt-8 border-t border-black/5">
+      <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 sm:gap-8 pt-6 sm:pt-8 border-t border-black/5">
         <div className="max-w-2xl">
-          <p className="text-base md:text-xl text-[#2a2a2a] leading-relaxed font-normal">
+          <p className="text-base sm:text-lg md:text-xl text-[#2a2a2a] leading-relaxed font-normal">
             {profile.bio}
           </p>
         </div>
 
         {/* Buttons: Explore selected work + Arrow Down circle */}
-        <div className="flex items-center gap-3 self-start lg:self-end flex-shrink-0">
+        <div className="flex items-center gap-3 w-full sm:w-auto self-start lg:self-end flex-shrink-0">
           <button
             onClick={scrollToWork}
-            className="group inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 text-sm md:text-base font-semibold px-7 py-4 rounded-full shadow-sm hover:shadow transition-all duration-200"
+            className="group flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 text-sm md:text-base font-semibold px-6 sm:px-7 py-3.5 sm:py-4 rounded-full shadow-sm hover:shadow transition-all duration-200"
           >
             <span>Explore selected work</span>
             <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
@@ -81,7 +83,7 @@ export default function HeroSection() {
           <button
             onClick={scrollToWork}
             aria-label="Scroll down"
-            className="w-13 h-13 md:w-14 md:h-14 rounded-full border border-black/20 flex items-center justify-center text-black hover:border-black hover:bg-black hover:text-white transition-all duration-200"
+            className="w-12 h-12 sm:w-13 sm:h-13 md:w-14 md:h-14 rounded-full border border-black/20 flex items-center justify-center text-black hover:border-black hover:bg-black hover:text-white transition-all duration-200 flex-shrink-0"
           >
             <ArrowDown className="w-5 h-5" />
           </button>

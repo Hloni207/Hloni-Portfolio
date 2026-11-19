@@ -29,7 +29,7 @@ function WhatsappIcon({ className = "w-5 h-5 text-[#25D366]" }) {
 
 export default function ContactModal({ isOpen, onClose }) {
   const { data } = usePortfolio();
-  const { contactLinks } = data;
+  const { contactLinks = [] } = data;
   const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
@@ -89,13 +89,16 @@ export default function ContactModal({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg bg-[#F7F5F0] rounded-2xl shadow-2xl p-6 sm:p-8 border border-black/10 text-[#111111] animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-lg bg-[#F7F5F0] rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 sm:p-8 border border-black/10 text-[#111111] animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile drag bar */}
+        <div className="w-10 h-1 bg-neutral-300 rounded-full mx-auto mb-4 sm:hidden" />
+
         {/* Close button */}
         <button
           onClick={onClose}
@@ -105,14 +108,14 @@ export default function ContactModal({ isOpen, onClose }) {
           <X className="w-5 h-5" />
         </button>
 
-        <div className="mb-6">
-          <span className="text-xs font-semibold tracking-widest uppercase text-neutral-500 block mb-1">
+        <div className="mb-5 sm:mb-6 pr-6">
+          <span className="text-[11px] sm:text-xs font-semibold tracking-widest uppercase text-neutral-500 block mb-1">
             Connect & Collaborate
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#111111]">
             Get in touch
           </h2>
-          <p className="text-sm text-neutral-600 mt-1">
+          <p className="text-xs sm:text-sm text-neutral-600 mt-1">
             Click any option below to open or copy the direct link.
           </p>
         </div>
@@ -122,13 +125,13 @@ export default function ContactModal({ isOpen, onClose }) {
           {contactLinks.map((link) => (
             <div
               key={link.id}
-              className="group flex items-center justify-between p-3.5 sm:p-4 rounded-xl bg-white border border-black/10 hover:border-black/30 shadow-sm transition-all"
+              className="group flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-white border border-black/10 hover:border-black/30 shadow-sm transition-all"
             >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="w-10 h-10 rounded-lg bg-[#F7F5F0] flex items-center justify-center flex-shrink-0 border border-black/5">
+              <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-[#F7F5F0] flex items-center justify-center flex-shrink-0 border border-black/5">
                   {renderIcon(link)}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 pr-2">
                   <h3 className="text-sm font-bold text-neutral-900 truncate">
                     {link.name}
                   </h3>
@@ -138,11 +141,11 @@ export default function ContactModal({ isOpen, onClose }) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => copyToClipboard(link.id, link.url.replace(/^mailto:/, ''))}
-                  className="p-2 rounded-lg text-neutral-500 hover:text-black hover:bg-neutral-100 transition-colors"
+                  className="p-2.5 rounded-xl text-neutral-500 hover:text-black hover:bg-neutral-100 transition-colors"
                   title="Copy link"
                 >
                   {copiedId === link.id ? (
@@ -156,7 +159,7 @@ export default function ContactModal({ isOpen, onClose }) {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 transition-colors inline-flex items-center justify-center"
+                  className="p-2.5 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 transition-colors inline-flex items-center justify-center"
                   title={`Open ${link.name}`}
                 >
                   <ExternalLink className="w-4 h-4" />
@@ -170,7 +173,7 @@ export default function ContactModal({ isOpen, onClose }) {
           <span>Looking forward to connecting with you.</span>
           <button
             onClick={onClose}
-            className="font-medium text-black hover:underline"
+            className="font-semibold text-black hover:underline"
           >
             Close
           </button>
