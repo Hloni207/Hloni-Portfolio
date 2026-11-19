@@ -17,8 +17,20 @@ export const initialPortfolioData = {
     subtitle: "View my workd and projects",
   },
 
-  // 9. delete all the selected work and leave empty space to be filled now
-  projects: [],
+  // 9. Selected projects
+  projects: [
+    {
+      id: "proj-1",
+      number: "01",
+      title: "CAMPUS SAFETY",
+      date: "2026",
+      tags: "Mobile App, Careers",
+      category: "01 / PROJECT",
+      description: "Campus safety and student emergency assistance mobile application prototype connecting campus security with rapid response protocols.",
+      image: "/media/profileimage.jpg",
+      link: "https://github.com/Hloni207"
+    }
+  ],
 
   experienceSection: {
     sectionTag: "02 / BACKGROUND",

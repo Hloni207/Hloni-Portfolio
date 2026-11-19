@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { initialPortfolioData } from '../data/initialData';
 
 const PortfolioContext = createContext(null);
@@ -10,12 +10,13 @@ export function PortfolioProvider({ children }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [pendingMediaFiles, setPendingMediaFiles] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const autoSyncTimer = useRef(null);
 
   useEffect(() => {
     async function loadData() {
       let mergedData = initialPortfolioData;
 
-      // 1. Try to fetch public/data/portfolio.json if available
+      // 1. Fetch public/data/portfolio.json from server / GitHub
       try {
         const res = await fetch(`/data/portfolio.json?t=${Date.now()}`);
         if (res.ok) {
@@ -28,8 +29,8 @@ export function PortfolioProvider({ children }) {
             experienceSection: { ...mergedData.experienceSection, ...(json.experienceSection || {}) },
             aboutSection: { ...mergedData.aboutSection, ...(json.aboutSection || {}) },
             contactSection: { ...mergedData.contactSection, ...(json.contactSection || {}) },
-            projects: json.projects !== undefined ? json.projects : mergedData.projects,
-            experiences: json.experiences || mergedData.experiences,
+            projects: (json.projects && json.projects.length > 0) ? json.projects : mergedData.projects,
+            experiences: (json.experiences && json.experiences.length > 0) ? json.experiences : mergedData.experiences,
             skills: json.skills || mergedData.skills,
             contactLinks: json.contactLinks || mergedData.contactLinks,
           };
@@ -38,7 +39,7 @@ export function PortfolioProvider({ children }) {
         console.warn("Could not load /data/portfolio.json, using defaults", err);
       }
 
-      // 2. Overlay any local drafts from localStorage if present
+      // 2. Overlay localStorage if present and non-empty
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -51,10 +52,11 @@ export function PortfolioProvider({ children }) {
             experienceSection: { ...mergedData.experienceSection, ...(parsed.experienceSection || {}) },
             aboutSection: { ...mergedData.aboutSection, ...(parsed.aboutSection || {}) },
             contactSection: { ...mergedData.contactSection, ...(parsed.contactSection || {}) },
-            projects: parsed.projects !== undefined ? parsed.projects : mergedData.projects,
-            experiences: parsed.experiences || mergedData.experiences,
-            skills: parsed.skills || mergedData.skills,
-            contactLinks: parsed.contactLinks || mergedData.contactLinks,
+            // If parsed has projects, use them; if parsed.projects is empty but server has projects, keep server projects!
+            projects: (parsed.projects && parsed.projects.length > 0) ? parsed.projects : mergedData.projects,
+            experiences: (parsed.experiences && parsed.experiences.length > 0) ? parsed.experiences : mergedData.experiences,
+            skills: (parsed.skills && parsed.skills.length > 0) ? parsed.skills : mergedData.skills,
+            contactLinks: (parsed.contactLinks && parsed.contactLinks.length > 0) ? parsed.contactLinks : mergedData.contactLinks,
           };
         }
       } catch (err) {
@@ -63,18 +65,57 @@ export function PortfolioProvider({ children }) {
 
       setData(mergedData);
       setIsLoaded(true);
+
+      // Auto-sync initial state to make sure server and git are in sync with user's latest data
+      if (mergedData.projects && mergedData.projects.length > 0) {
+        try {
+          fetch('/api/sync-to-github', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ portfolioData: mergedData }),
+          }).catch(() => {});
+        } catch (e) {}
+      }
     }
 
     loadData();
   }, []);
 
-  const saveToStorage = (newData) => {
+  // Save data and automatically sync to disk and GitHub
+  const saveToStorage = (newData, filesToPush = []) => {
     setData(newData);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
     } catch (err) {
       console.error("Error saving to localStorage", err);
     }
+
+    // Debounced automatic background sync to GitHub / disk
+    if (autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
+    autoSyncTimer.current = setTimeout(async () => {
+      try {
+        let token = undefined;
+        try { token = localStorage.getItem('hloni_github_pat') || undefined; } catch (e) {}
+
+        const allFiles = [...pendingMediaFiles, ...filesToPush];
+
+        await fetch('/api/sync-to-github', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            portfolioData: newData,
+            mediaFiles: allFiles,
+            githubToken: token,
+          }),
+        });
+
+        if (allFiles.length > 0) {
+          setPendingMediaFiles([]);
+        }
+      } catch (e) {
+        console.warn('Auto-sync note:', e);
+      }
+    }, 600);
   };
 
   const addPendingMediaFile = (fileObj) => {
@@ -97,7 +138,7 @@ export function PortfolioProvider({ children }) {
     saveToStorage(updated);
   };
 
-  const addProject = (project) => {
+  const addProject = (project, mediaFile) => {
     const newProject = {
       ...project,
       id: `proj-${Date.now()}`,
@@ -107,7 +148,7 @@ export function PortfolioProvider({ children }) {
       ...data,
       projects: [newProject, ...(data.projects || [])]
     };
-    saveToStorage(updated);
+    saveToStorage(updated, mediaFile ? [mediaFile] : []);
   };
 
   const updateProject = (id, projectUpdates) => {
@@ -203,7 +244,7 @@ export function PortfolioProvider({ children }) {
     saveToStorage(updated);
   };
 
-  const updateResume = (resumeUrl, resumeFilename) => {
+  const updateResume = (resumeUrl, resumeFilename, mediaFile) => {
     const updated = {
       ...data,
       profile: {
@@ -212,14 +253,14 @@ export function PortfolioProvider({ children }) {
         resumeFilename: resumeFilename || data.profile?.resumeFilename || 'resume.pdf'
       }
     };
-    saveToStorage(updated);
+    saveToStorage(updated, mediaFile ? [mediaFile] : []);
   };
 
   const resetToDefaults = () => {
     saveToStorage(initialPortfolioData);
   };
 
-  // Sync to GitHub action
+  // Explicit sync to GitHub action
   const syncToGitHub = async (githubToken) => {
     setIsSyncing(true);
     try {

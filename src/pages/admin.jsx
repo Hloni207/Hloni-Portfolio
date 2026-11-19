@@ -199,7 +199,7 @@ export default function AdminPage() {
   };
 
   // 1. Submit Work
-  const handleAddWork = (e) => {
+  const handleAddWork = async (e) => {
     e.preventDefault();
     if (!workForm.name.trim()) return alert('Project Name is required');
 
@@ -223,7 +223,8 @@ export default function AdminPage() {
       url: 'https://github.com/Hloni207',
     });
 
-    showNotification('New project added to your portfolio!');
+    showNotification('Project published! Pushing to GitHub...');
+    handlePushToGitHub();
   };
 
   // 2. Submit About
@@ -240,7 +241,8 @@ export default function AdminPage() {
       bio: aboutForm.bio,
       avatar: aboutForm.avatar,
     });
-    showNotification('About story & bio updated!');
+    showNotification('About story updated! Pushing to GitHub...');
+    handlePushToGitHub();
   };
 
   // 3. Submit Experience
@@ -257,7 +259,8 @@ export default function AdminPage() {
       date: '2026',
       image: '',
     });
-    showNotification('Experience added!');
+    showNotification('Experience added! Pushing to GitHub...');
+    handlePushToGitHub();
   };
 
   // Edit Experience handlers
@@ -278,7 +281,8 @@ export default function AdminPage() {
     }
     updateExperience(id, editExpForm);
     setEditingExpId(null);
-    showNotification('Experience updated!');
+    showNotification('Experience updated! Pushing to GitHub...');
+    handlePushToGitHub();
   };
 
   const cancelEditExperience = () => {
@@ -303,7 +307,8 @@ export default function AdminPage() {
     if (!editProjForm.title.trim()) return alert('Project name is required');
     updateProject(id, editProjForm);
     setEditingProjId(null);
-    showNotification('Project updated!');
+    showNotification('Project updated! Pushing to GitHub...');
+    handlePushToGitHub();
   };
 
   const cancelEditProject = () => {
@@ -802,7 +807,8 @@ export default function AdminPage() {
                               onClick={() => {
                                 if (confirm(`Delete "${proj.title}"?`)) {
                                   deleteProject(proj.id);
-                                  showNotification('Project removed');
+                                  showNotification('Project removed! Pushing to GitHub...');
+                                  handlePushToGitHub();
                                 }
                               }}
                               className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
@@ -1281,7 +1287,8 @@ export default function AdminPage() {
                               onClick={() => {
                                 if (confirm(`Delete "${exp.name}"?`)) {
                                   deleteExperience(exp.id);
-                                  showNotification('Experience removed');
+                                  showNotification('Experience removed! Pushing to GitHub...');
+                                  handlePushToGitHub();
                                 }
                               }}
                               className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
