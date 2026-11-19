@@ -933,15 +933,42 @@ export default function AdminPage() {
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
-                      Image URL (Displayed in modal)
+                      Image (saved in src/media)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="https://... or /media/..."
-                      value={experienceForm.image}
-                      onChange={(e) => setExperienceForm({ ...experienceForm, image: e.target.value })}
-                      className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                      <label className="flex items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-black/20 hover:border-black cursor-pointer bg-[#F6F5F1] transition-colors text-center">
+                        <Upload className="w-5 h-5 text-neutral-500" />
+                        <div className="text-left">
+                          <span className="text-xs font-bold text-neutral-800 block">
+                            {uploadingImage ? 'Uploading to src/media...' : 'Upload Image File'}
+                          </span>
+                          <span className="text-[11px] text-neutral-400 block">
+                            Saves file to src/media automatically
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(e, 'experience')}
+                          className="hidden"
+                        />
+                      </label>
+
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Or type path: /media/image.jpg"
+                          value={experienceForm.image}
+                          onChange={(e) => setExperienceForm({ ...experienceForm, image: e.target.value })}
+                          className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                        />
+                        {experienceForm.image && (
+                          <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-medium">
+                            ✓ Image set: {experienceForm.image}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1043,14 +1070,58 @@ export default function AdminPage() {
                             </div>
                             <div>
                               <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
-                                Image URL
+                                Image
                               </label>
-                              <input
-                                type="text"
-                                value={editExpForm.image}
-                                onChange={(e) => setEditExpForm({ ...editExpForm, image: e.target.value })}
-                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
-                              />
+                              <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-black/20 hover:border-black cursor-pointer bg-white transition-colors">
+                                  <Upload className="w-4 h-4 text-neutral-500" />
+                                  <span className="text-xs font-semibold text-neutral-700">
+                                    {uploadingImage ? 'Uploading...' : 'Upload Image'}
+                                  </span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      setUploadingImage(true);
+                                      const reader = new FileReader();
+                                      reader.onload = async (ev) => {
+                                        try {
+                                          const res = await fetch('/api/upload', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ name: file.name, base64Data: ev.target.result }),
+                                          });
+                                          const result = await res.json();
+                                          if (result.success) {
+                                            setEditExpForm(prev => ({ ...prev, image: result.url }));
+                                            showNotification(`Image saved to src/media/${result.fileName}`);
+                                          }
+                                        } catch (err) {
+                                          setEditExpForm(prev => ({ ...prev, image: ev.target.result }));
+                                        } finally {
+                                          setUploadingImage(false);
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }}
+                                    className="hidden"
+                                  />
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Or type path: /media/image.jpg"
+                                  value={editExpForm.image}
+                                  onChange={(e) => setEditExpForm({ ...editExpForm, image: e.target.value })}
+                                  className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                                />
+                                {editExpForm.image && (
+                                  <p className="text-xs text-emerald-600 flex items-center gap-1 font-medium">
+                                    ✓ {editExpForm.image}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
 
