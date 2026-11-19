@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { 
   ArrowLeft, Plus, Trash2, Save, FileText, Upload, 
   ExternalLink, Eye, RefreshCw, Download, Sparkles, Briefcase, 
-  Layers, User, Mail, CheckCircle2, Image as ImageIcon, ArrowUpRight
+  Layers, User, Mail, CheckCircle2, Image as ImageIcon, ArrowUpRight,
+  Pencil, X
 } from 'lucide-react';
 import { usePortfolio } from '@/context/PortfolioContext';
 
@@ -13,8 +14,10 @@ export default function AdminPage() {
     updateProfile,
     updateAbout,
     addProject,
+    updateProject,
     deleteProject,
     addExperience,
+    updateExperience,
     deleteExperience,
     addSkill,
     deleteSkill,
@@ -29,6 +32,12 @@ export default function AdminPage() {
   const [saveToast, setSaveToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('Changes saved live!');
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Editing states for experiences & projects
+  const [editingExpId, setEditingExpId] = useState(null);
+  const [editExpForm, setEditExpForm] = useState({ name: '', position: '', description: '', date: '', image: '' });
+  const [editingProjId, setEditingProjId] = useState(null);
+  const [editProjForm, setEditProjForm] = useState({ title: '', date: '', description: '', image: '', tags: '', link: '' });
 
   // 1. Work Creation Form (Prompted in exact requested order: Name, date, Description, image (stored in src/media), tag, URL link)
   const [workForm, setWorkForm] = useState({
@@ -203,6 +212,57 @@ export default function AdminPage() {
       image: '',
     });
     showNotification('Experience added!');
+  };
+
+  // Edit Experience handlers
+  const startEditExperience = (exp) => {
+    setEditingExpId(exp.id);
+    setEditExpForm({
+      name: exp.name || '',
+      position: exp.position || '',
+      description: exp.description || '',
+      date: exp.date || '',
+      image: exp.image || '',
+    });
+  };
+
+  const handleSaveExperience = (id) => {
+    if (!editExpForm.name.trim() || !editExpForm.position.trim()) {
+      return alert('Company/Name and Position are required');
+    }
+    updateExperience(id, editExpForm);
+    setEditingExpId(null);
+    showNotification('Experience updated!');
+  };
+
+  const cancelEditExperience = () => {
+    setEditingExpId(null);
+    setEditExpForm({ name: '', position: '', description: '', date: '', image: '' });
+  };
+
+  // Edit Project handlers
+  const startEditProject = (proj) => {
+    setEditingProjId(proj.id);
+    setEditProjForm({
+      title: proj.title || '',
+      date: proj.date || '',
+      description: proj.description || '',
+      image: proj.image || '',
+      tags: proj.tags || '',
+      link: proj.link || '',
+    });
+  };
+
+  const handleSaveProject = (id) => {
+    if (!editProjForm.title.trim()) return alert('Project name is required');
+    updateProject(id, editProjForm);
+    setEditingProjId(null);
+    showNotification('Project updated!');
+  };
+
+  const cancelEditProject = () => {
+    setEditingProjId(null);
+    setEditProjForm({ title: '', date: '', description: '', image: '', tags: '', link: '' });
   };
 
   // 4. Submit Skill
@@ -483,7 +543,7 @@ export default function AdminPage() {
               </form>
             </div>
 
-            {/* List of Published Works */}
+            {/* List of Published Works with Edit & Delete */}
             <div className="bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-sm space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -491,7 +551,7 @@ export default function AdminPage() {
                     Published Projects ({data.projects?.length || 0})
                   </h3>
                   <p className="text-xs text-neutral-500 mt-0.5">
-                    Live works currently displayed in Section 01 (Portfolio).
+                    Live works currently displayed in Section 01 (Portfolio). Click the pencil to edit.
                   </p>
                 </div>
               </div>
@@ -499,49 +559,167 @@ export default function AdminPage() {
               {data.projects && data.projects.length > 0 ? (
                 <div className="divide-y divide-black/5">
                   {data.projects.map((proj) => (
-                    <div key={proj.id} className="py-5 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="w-14 h-14 rounded-2xl bg-[#F6F5F1] overflow-hidden flex-shrink-0 border border-black/10">
-                          <img
-                            src={proj.image || '/media/profileimage.jpg'}
-                            alt={proj.title}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.target.src = '/media/profileimage.jpg';
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-neutral-900 truncate">{proj.title}</h4>
-                          <p className="text-xs text-neutral-500">{proj.date} • {proj.tags || proj.category}</p>
-                        </div>
-                      </div>
+                    <div key={proj.id} className="py-5">
+                      {editingProjId === proj.id ? (
+                        /* ── Inline Edit Form ── */
+                        <div className="bg-[#F6F5F1] rounded-2xl p-6 space-y-5 border border-black/10">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">
+                              Editing: {proj.title}
+                            </span>
+                            <button
+                              onClick={cancelEditProject}
+                              className="p-1.5 text-neutral-400 hover:text-black rounded-full hover:bg-white transition-colors"
+                              title="Cancel editing"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
 
-                      <div className="flex items-center gap-2">
-                        {proj.link && (
-                          <a
-                            href={proj.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2.5 text-neutral-500 hover:text-black rounded-full hover:bg-black/5 transition-colors"
-                            title="Visit link"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        )}
-                        <button
-                          onClick={() => {
-                            if (confirm(`Delete "${proj.title}"?`)) {
-                              deleteProject(proj.id);
-                              showNotification('Project removed');
-                            }
-                          }}
-                          className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
-                          title="Delete project"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Name / Title *
+                              </label>
+                              <input
+                                type="text"
+                                value={editProjForm.title}
+                                onChange={(e) => setEditProjForm({ ...editProjForm, title: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Date
+                              </label>
+                              <input
+                                type="text"
+                                value={editProjForm.date}
+                                onChange={(e) => setEditProjForm({ ...editProjForm, date: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                              Description
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={editProjForm.description}
+                              onChange={(e) => setEditProjForm({ ...editProjForm, description: e.target.value })}
+                              className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm leading-relaxed"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Image URL
+                              </label>
+                              <input
+                                type="text"
+                                value={editProjForm.image}
+                                onChange={(e) => setEditProjForm({ ...editProjForm, image: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Tags / Technologies
+                              </label>
+                              <input
+                                type="text"
+                                value={editProjForm.tags}
+                                onChange={(e) => setEditProjForm({ ...editProjForm, tags: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                              URL Link
+                            </label>
+                            <input
+                              type="text"
+                              value={editProjForm.link}
+                              onChange={(e) => setEditProjForm({ ...editProjForm, link: e.target.value })}
+                              className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                              onClick={cancelEditProject}
+                              className="px-5 py-2.5 rounded-full text-sm font-semibold text-neutral-600 bg-white border border-black/10 hover:bg-neutral-50 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSaveProject(proj.id)}
+                              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#111111] text-white hover:bg-neutral-800 transition-all shadow-md"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Save Changes</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── Display Row ── */
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-4 min-w-0">
+                            <div className="w-14 h-14 rounded-2xl bg-[#F6F5F1] overflow-hidden flex-shrink-0 border border-black/10">
+                              <img
+                                src={proj.image || '/media/profileimage.jpg'}
+                                alt={proj.title}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.target.src = '/media/profileimage.jpg';
+                                }}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-neutral-900 truncate">{proj.title}</h4>
+                              <p className="text-xs text-neutral-500">{proj.date} • {proj.tags || proj.category}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {proj.link && (
+                              <a
+                                href={proj.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2.5 text-neutral-500 hover:text-black rounded-full hover:bg-black/5 transition-colors"
+                                title="Visit link"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => startEditProject(proj)}
+                              className="p-2.5 text-neutral-400 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-colors"
+                              title="Edit project"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete "${proj.title}"?`)) {
+                                  deleteProject(proj.id);
+                                  showNotification('Project removed');
+                                }
+                              }}
+                              className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
+                              title="Delete project"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -793,35 +971,171 @@ export default function AdminPage() {
               </form>
             </div>
 
-            {/* Current Experiences (Active Lumotech, Robo Rumble, W3node) */}
+            {/* Current Experiences with Edit & Delete */}
             <div className="bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-sm space-y-6">
-              <h3 className="text-xl font-bold text-[#111111]">
-                Active Experiences ({data.experiences?.length || 0})
-              </h3>
-
-              <div className="divide-y divide-black/5">
-                {(data.experiences || []).map((exp) => (
-                  <div key={exp.id} className="py-4 flex items-center justify-between gap-4">
-                    <div>
-                      <h4 className="font-bold text-neutral-900">{exp.name}</h4>
-                      <p className="text-xs text-neutral-500">{exp.position} • {exp.date}</p>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete "${exp.name}"?`)) {
-                          deleteExperience(exp.id);
-                          showNotification('Experience removed');
-                        }
-                      }}
-                      className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
-                      title="Delete experience"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-[#111111]">
+                    Active Experiences ({data.experiences?.length || 0})
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    Live experiences displayed in Section 02 (Background). Click the pencil to edit.
+                  </p>
+                </div>
               </div>
+
+              {data.experiences && data.experiences.length > 0 ? (
+                <div className="divide-y divide-black/5">
+                  {(data.experiences || []).map((exp) => (
+                    <div key={exp.id} className="py-5">
+                      {editingExpId === exp.id ? (
+                        /* ── Inline Edit Form ── */
+                        <div className="bg-[#F6F5F1] rounded-2xl p-6 space-y-5 border border-black/10">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">
+                              Editing: {exp.name}
+                            </span>
+                            <button
+                              onClick={cancelEditExperience}
+                              className="p-1.5 text-neutral-400 hover:text-black rounded-full hover:bg-white transition-colors"
+                              title="Cancel editing"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Company / Name *
+                              </label>
+                              <input
+                                type="text"
+                                value={editExpForm.name}
+                                onChange={(e) => setEditExpForm({ ...editExpForm, name: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Position / Role *
+                              </label>
+                              <input
+                                type="text"
+                                value={editExpForm.position}
+                                onChange={(e) => setEditExpForm({ ...editExpForm, position: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Date Range
+                              </label>
+                              <input
+                                type="text"
+                                value={editExpForm.date}
+                                onChange={(e) => setEditExpForm({ ...editExpForm, date: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                                Image URL
+                              </label>
+                              <input
+                                type="text"
+                                value={editExpForm.image}
+                                onChange={(e) => setEditExpForm({ ...editExpForm, image: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                              Description
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={editExpForm.description}
+                              onChange={(e) => setEditExpForm({ ...editExpForm, description: e.target.value })}
+                              className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm leading-relaxed"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                              onClick={cancelEditExperience}
+                              className="px-5 py-2.5 rounded-full text-sm font-semibold text-neutral-600 bg-white border border-black/10 hover:bg-neutral-50 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSaveExperience(exp.id)}
+                              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#111111] text-white hover:bg-neutral-800 transition-all shadow-md"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Save Changes</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── Display Row ── */
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-4 min-w-0">
+                            {exp.image && (
+                              <div className="w-12 h-12 rounded-xl bg-[#F6F5F1] overflow-hidden flex-shrink-0 border border-black/10">
+                                <img
+                                  src={exp.image}
+                                  alt={exp.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-neutral-900 truncate">{exp.name}</h4>
+                              <p className="text-xs text-neutral-500">{exp.position} • {exp.date}</p>
+                              {exp.description && (
+                                <p className="text-xs text-neutral-400 mt-0.5 truncate max-w-md">{exp.description}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              onClick={() => startEditExperience(exp)}
+                              className="p-2.5 text-neutral-400 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-colors"
+                              title="Edit experience"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete "${exp.name}"?`)) {
+                                  deleteExperience(exp.id);
+                                  showNotification('Experience removed');
+                                }
+                              }}
+                              className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
+                              title="Delete experience"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-10 text-center text-sm text-neutral-400 border border-dashed border-black/10 rounded-2xl">
+                  No experiences added yet. Use the form above to add your first experience!
+                </div>
+              )}
             </div>
           </div>
         )}
