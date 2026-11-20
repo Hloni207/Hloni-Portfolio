@@ -1,247 +1,227 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initialPortfolioData } from '../data/initialData';
 
 const PortfolioContext = createContext(null);
 
-const STORAGE_KEY = 'hloni_portfolio_data_v3';
+const DRAFT_STORAGE_KEY = 'hloni_portfolio_draft_v4';
 
-export function PortfolioProvider({ children }) {
-  const [data, setData] = useState(initialPortfolioData);
+export function PortfolioProvider({ children, initialData }) {
+  const baseData = initialData || initialPortfolioData;
+  const [data, setData] = useState(baseData);
+  const [publishedData, setPublishedData] = useState(baseData);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
+  const [lastPublished, setLastPublished] = useState(null);
   const [pendingMediaFiles, setPendingMediaFiles] = useState([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const autoSyncTimer = useRef(null);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
-    async function loadData() {
-      let mergedData = initialPortfolioData;
+    async function init() {
+      let currentPublished = baseData;
 
-      // 1. Fetch public/data/portfolio.json from server / GitHub
+      // 1. Fetch public/data/portfolio.json to ensure latest live published state
       try {
         const res = await fetch(`/data/portfolio.json?t=${Date.now()}`);
         if (res.ok) {
           const json = await res.json();
-          mergedData = {
-            ...mergedData,
+          currentPublished = {
+            ...initialPortfolioData,
             ...json,
-            profile: { ...mergedData.profile, ...(json.profile || {}) },
-            projectsSection: { ...mergedData.projectsSection, ...(json.projectsSection || {}) },
-            experienceSection: { ...mergedData.experienceSection, ...(json.experienceSection || {}) },
-            aboutSection: { ...mergedData.aboutSection, ...(json.aboutSection || {}) },
-            contactSection: { ...mergedData.contactSection, ...(json.contactSection || {}) },
-            projects: (json.projects && json.projects.length > 0) ? json.projects : mergedData.projects,
-            experiences: (json.experiences && json.experiences.length > 0) ? json.experiences : mergedData.experiences,
-            skills: json.skills || mergedData.skills,
-            contactLinks: json.contactLinks || mergedData.contactLinks,
+            profile: { ...initialPortfolioData.profile, ...(json.profile || {}) },
+            projectsSection: { ...initialPortfolioData.projectsSection, ...(json.projectsSection || {}) },
+            experienceSection: { ...initialPortfolioData.experienceSection, ...(json.experienceSection || {}) },
+            aboutSection: { ...initialPortfolioData.aboutSection, ...(json.aboutSection || {}) },
+            contactSection: { ...initialPortfolioData.contactSection, ...(json.contactSection || {}) },
+            projects: Array.isArray(json.projects) ? json.projects : initialPortfolioData.projects,
+            experiences: Array.isArray(json.experiences) ? json.experiences : initialPortfolioData.experiences,
+            skills: Array.isArray(json.skills) ? json.skills : initialPortfolioData.skills,
+            contactLinks: Array.isArray(json.contactLinks) ? json.contactLinks : initialPortfolioData.contactLinks,
           };
+          setPublishedData(currentPublished);
         }
       } catch (err) {
-        console.warn("Could not load /data/portfolio.json, using defaults", err);
+        console.warn('Could not load live /data/portfolio.json:', err.message);
       }
 
-      // 2. Overlay localStorage if present and non-empty
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          mergedData = {
-            ...mergedData,
-            ...parsed,
-            profile: { ...mergedData.profile, ...(parsed.profile || {}) },
-            projectsSection: { ...mergedData.projectsSection, ...(parsed.projectsSection || {}) },
-            experienceSection: { ...mergedData.experienceSection, ...(parsed.experienceSection || {}) },
-            aboutSection: { ...mergedData.aboutSection, ...(parsed.aboutSection || {}) },
-            contactSection: { ...mergedData.contactSection, ...(parsed.contactSection || {}) },
-            // If parsed has projects, use them; if parsed.projects is empty but server has projects, keep server projects!
-            projects: (parsed.projects && parsed.projects.length > 0) ? parsed.projects : mergedData.projects,
-            experiences: (parsed.experiences && parsed.experiences.length > 0) ? parsed.experiences : mergedData.experiences,
-            skills: (parsed.skills && parsed.skills.length > 0) ? parsed.skills : mergedData.skills,
-            contactLinks: (parsed.contactLinks && parsed.contactLinks.length > 0) ? parsed.contactLinks : mergedData.contactLinks,
-          };
-        }
-      } catch (err) {
-        console.error("Error loading portfolio data from localStorage", err);
-      }
+      // 2. Only if in admin studio (/admin), check for local draft
+      const isAdminPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
 
-      setData(mergedData);
-      setIsLoaded(true);
-
-      // Auto-sync initial state to make sure server and git are in sync with user's latest data
-      if (mergedData.projects && mergedData.projects.length > 0) {
+      if (isAdminPage) {
         try {
-          fetch('/api/sync-to-github', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ portfolioData: mergedData }),
-          }).catch(() => {});
-        } catch (e) {}
+          const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (savedDraft) {
+            const parsed = JSON.parse(savedDraft);
+            const draftMerged = {
+              ...currentPublished,
+              ...parsed,
+              profile: { ...currentPublished.profile, ...(parsed.profile || {}) },
+              projectsSection: { ...currentPublished.projectsSection, ...(parsed.projectsSection || {}) },
+              experienceSection: { ...currentPublished.experienceSection, ...(parsed.experienceSection || {}) },
+              aboutSection: { ...currentPublished.aboutSection, ...(parsed.aboutSection || {}) },
+              contactSection: { ...currentPublished.contactSection, ...(parsed.contactSection || {}) },
+              projects: Array.isArray(parsed.projects) ? parsed.projects : currentPublished.projects,
+              experiences: Array.isArray(parsed.experiences) ? parsed.experiences : currentPublished.experiences,
+              skills: Array.isArray(parsed.skills) ? parsed.skills : currentPublished.skills,
+              contactLinks: Array.isArray(parsed.contactLinks) ? parsed.contactLinks : currentPublished.contactLinks,
+            };
+
+            // Check if draft differs from published
+            const differs = JSON.stringify(draftMerged) !== JSON.stringify(currentPublished);
+            setData(draftMerged);
+            setHasUnpublishedChanges(differs);
+            setIsLoaded(true);
+            return;
+          }
+        } catch (e) {
+          console.warn('Draft load warning:', e);
+        }
       }
+
+      // Public site always uses verified published data
+      setData(currentPublished);
+      setIsLoaded(true);
     }
 
-    loadData();
+    init();
   }, []);
 
-  // Save data and automatically sync to disk and GitHub
-  const saveToStorage = (newData, filesToPush = []) => {
+  // Save changes to working state & draft storage
+  const saveDraft = (newData) => {
     setData(newData);
+    setHasUnpublishedChanges(true);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(newData));
     } catch (err) {
-      console.error("Error saving to localStorage", err);
+      console.warn('Error saving draft:', err);
     }
-
-    // Debounced automatic background sync to GitHub / disk
-    if (autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
-    autoSyncTimer.current = setTimeout(async () => {
-      try {
-        let token = undefined;
-        try { token = localStorage.getItem('hloni_github_pat') || undefined; } catch (e) {}
-
-        const allFiles = [...pendingMediaFiles, ...filesToPush];
-
-        await fetch('/api/sync-to-github', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            portfolioData: newData,
-            mediaFiles: allFiles,
-            githubToken: token,
-          }),
-        });
-
-        if (allFiles.length > 0) {
-          setPendingMediaFiles([]);
-        }
-      } catch (e) {
-        console.warn('Auto-sync note:', e);
-      }
-    }, 600);
   };
 
   const addPendingMediaFile = (fileObj) => {
-    setPendingMediaFiles(prev => [...prev.filter(f => f.name !== fileObj.name), fileObj]);
+    setPendingMediaFiles((prev) => [...prev.filter((f) => f.name !== fileObj.name), fileObj]);
+    setHasUnpublishedChanges(true);
   };
 
   const updateProfile = (profileUpdates) => {
     const updated = {
       ...data,
-      profile: { ...data.profile, ...profileUpdates }
+      profile: { ...data.profile, ...profileUpdates },
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const updateAbout = (aboutUpdates) => {
     const updated = {
       ...data,
-      aboutSection: { ...data.aboutSection, ...aboutUpdates }
+      aboutSection: { ...data.aboutSection, ...aboutUpdates },
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const addProject = (project, mediaFile) => {
     const newProject = {
       ...project,
       id: `proj-${Date.now()}`,
-      number: String((data.projects?.length || 0) + 1).padStart(2, '0')
+      number: String((data.projects?.length || 0) + 1).padStart(2, '0'),
     };
     const updated = {
       ...data,
-      projects: [newProject, ...(data.projects || [])]
+      projects: [newProject, ...(data.projects || [])],
     };
-    saveToStorage(updated, mediaFile ? [mediaFile] : []);
+    if (mediaFile) addPendingMediaFile(mediaFile);
+    saveDraft(updated);
   };
 
   const updateProject = (id, projectUpdates) => {
     const updated = {
       ...data,
-      projects: (data.projects || []).map(p => p.id === id ? { ...p, ...projectUpdates } : p)
+      projects: (data.projects || []).map((p) => (p.id === id ? { ...p, ...projectUpdates } : p)),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const deleteProject = (id) => {
     const updated = {
       ...data,
-      projects: (data.projects || []).filter(p => p.id !== id)
+      projects: (data.projects || []).filter((p) => p.id !== id),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const addExperience = (exp) => {
     const newExp = {
       ...exp,
       id: `exp-${Date.now()}`,
-      number: String((data.experiences?.length || 0) + 1).padStart(2, '0')
+      number: String((data.experiences?.length || 0) + 1).padStart(2, '0'),
     };
     const updated = {
       ...data,
-      experiences: [newExp, ...(data.experiences || [])]
+      experiences: [newExp, ...(data.experiences || [])],
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const updateExperience = (id, expUpdates) => {
     const updated = {
       ...data,
-      experiences: (data.experiences || []).map(e => e.id === id ? { ...e, ...expUpdates } : e)
+      experiences: (data.experiences || []).map((e) => (e.id === id ? { ...e, ...expUpdates } : e)),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const deleteExperience = (id) => {
     const updated = {
       ...data,
-      experiences: (data.experiences || []).filter(e => e.id !== id)
+      experiences: (data.experiences || []).filter((e) => e.id !== id),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const addSkill = (skill) => {
     const newSkill = {
       ...skill,
-      id: `sk-${Date.now()}`
+      id: `sk-${Date.now()}`,
     };
     const updated = {
       ...data,
-      skills: [...(data.skills || []), newSkill]
+      skills: [...(data.skills || []), newSkill],
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const deleteSkill = (id) => {
     const updated = {
       ...data,
-      skills: (data.skills || []).filter(s => s.id !== id)
+      skills: (data.skills || []).filter((s) => s.id !== id),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const addContactLink = (link) => {
     const newLink = {
       ...link,
-      id: `cnt-${Date.now()}`
+      id: `cnt-${Date.now()}`,
     };
     const updated = {
       ...data,
-      contactLinks: [...(data.contactLinks || []), newLink]
+      contactLinks: [...(data.contactLinks || []), newLink],
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const updateContactLink = (id, linkUpdates) => {
     const updated = {
       ...data,
-      contactLinks: (data.contactLinks || []).map(c => c.id === id ? { ...c, ...linkUpdates } : c)
+      contactLinks: (data.contactLinks || []).map((c) => (c.id === id ? { ...c, ...linkUpdates } : c)),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const deleteContactLink = (id) => {
     const updated = {
       ...data,
-      contactLinks: (data.contactLinks || []).filter(c => c.id !== id)
+      contactLinks: (data.contactLinks || []).filter((c) => c.id !== id),
     };
-    saveToStorage(updated);
+    saveDraft(updated);
   };
 
   const updateResume = (resumeUrl, resumeFilename, mediaFile) => {
@@ -250,50 +230,69 @@ export function PortfolioProvider({ children }) {
       profile: {
         ...data.profile,
         resumeUrl,
-        resumeFilename: resumeFilename || data.profile?.resumeFilename || 'resume.pdf'
-      }
+        resumeFilename: resumeFilename || data.profile?.resumeFilename || 'resume.pdf',
+      },
     };
-    saveToStorage(updated, mediaFile ? [mediaFile] : []);
+    if (mediaFile) addPendingMediaFile(mediaFile);
+    saveDraft(updated);
+  };
+
+  const revertDraftToPublished = () => {
+    setData(publishedData);
+    setHasUnpublishedChanges(false);
+    setPendingMediaFiles([]);
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (e) {}
   };
 
   const resetToDefaults = () => {
-    saveToStorage(initialPortfolioData);
+    saveDraft(initialPortfolioData);
   };
 
-  // Explicit sync to GitHub action
-  const syncToGitHub = async (githubToken) => {
-    setIsSyncing(true);
+  // Publish changes to GitHub via secure server endpoint
+  const publishToGitHub = async () => {
+    setIsPublishing(true);
     try {
       const res = await fetch('/api/sync-to-github', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           portfolioData: data,
           mediaFiles: pendingMediaFiles,
-          githubToken,
         }),
       });
 
       const result = await res.json();
       if (!res.ok || !result.success) {
-        throw new Error(result.error || result.message || 'Failed to sync to GitHub');
+        throw new Error(result.error || result.message || 'Failed to publish to GitHub');
       }
 
+      setPublishedData(data);
+      setHasUnpublishedChanges(false);
+      setLastPublished(result.timestamp || new Date().toISOString());
       setPendingMediaFiles([]);
+
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {}
+
       return { success: true, result };
     } catch (err) {
-      console.error('Error syncing to GitHub:', err);
+      console.error('Publishing error:', err);
       return { success: false, error: err.message };
     } finally {
-      setIsSyncing(false);
+      setIsPublishing(false);
     }
   };
 
   const exportData = () => {
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(data, null, 2))}`;
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", jsonString);
-    downloadAnchor.setAttribute("download", "portfolio-data.json");
+    downloadAnchor.setAttribute('href', jsonString);
+    downloadAnchor.setAttribute('download', 'portfolio-data.json');
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -302,10 +301,10 @@ export function PortfolioProvider({ children }) {
   const importData = (importedJson) => {
     try {
       const parsed = typeof importedJson === 'string' ? JSON.parse(importedJson) : importedJson;
-      saveToStorage(parsed);
+      saveDraft(parsed);
       return true;
     } catch (e) {
-      console.error("Invalid JSON imported", e);
+      console.error('Invalid JSON imported', e);
       return false;
     }
   };
@@ -314,10 +313,14 @@ export function PortfolioProvider({ children }) {
     <PortfolioContext.Provider
       value={{
         data,
+        publishedData,
         isLoaded,
-        isSyncing,
+        hasUnpublishedChanges,
+        lastPublished,
+        isPublishing,
         pendingMediaFiles,
         addPendingMediaFile,
+        saveDraft,
         updateProfile,
         updateAbout,
         addProject,
@@ -332,8 +335,9 @@ export function PortfolioProvider({ children }) {
         updateContactLink,
         deleteContactLink,
         updateResume,
+        revertDraftToPublished,
         resetToDefaults,
-        syncToGitHub,
+        publishToGitHub,
         exportData,
         importData,
       }}

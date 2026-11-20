@@ -1,114 +1,102 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { verifyAdminRequest } from '@/lib/auth';
+import { commitFileToGitHub, getGitHubConfig } from '@/lib/github';
 
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '25mb',
+      sizeLimit: '30mb',
     },
   },
 };
-
-// Helper: Commit a file to GitHub via REST API
-async function commitFileToGitHub(repo, filePath, base64Content, commitMessage, token) {
-  const url = `https://api.github.com/repos/${repo}/contents/${filePath}`;
-  const headers = {
-    'Authorization': `Bearer ${token}`,
-    'Accept': 'application/vnd.github.v3+json',
-    'User-Agent': 'Hloni-Portfolio-CMS',
-    'Content-Type': 'application/json',
-  };
-
-  let sha = undefined;
-  try {
-    const getRes = await fetch(url, { headers });
-    if (getRes.ok) {
-      const existing = await getRes.json();
-      sha = existing.sha;
-    }
-  } catch (err) {}
-
-  const putBody = {
-    message: commitMessage,
-    content: base64Content,
-    branch: 'main',
-  };
-  if (sha) putBody.sha = sha;
-
-  const putRes = await fetch(url, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify(putBody),
-  });
-
-  return putRes.ok;
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // 1. Verify admin authentication
+  if (!verifyAdminRequest(req)) {
+    return res.status(401).json({
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'Admin authentication required to upload media.'
+    });
+  }
+
   try {
-    const { name, base64Data, githubToken } = req.body;
+    const { name, base64Data } = req.body || {};
     if (!name || !base64Data) {
-      return res.status(400).json({ error: 'Missing name or base64Data' });
+      return res.status(400).json({ success: false, error: 'Missing name or base64Data' });
     }
 
-    // Clean filename
-    const sanitizedName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileName = sanitizedName.startsWith('resume') ? 'resume.pdf' : `${Date.now()}_${sanitizedName}`;
+    // Clean and sanitize filename
+    const sanitizedName = name.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
+    const isPdf = sanitizedName.endsWith('.pdf');
+    const fileName = sanitizedName.startsWith('resume')
+      ? 'resume.pdf'
+      : `${Date.now()}_${sanitizedName}`;
 
     // Extract raw base64 content
     const base64Content = base64Data.replace(/^data:[a-zA-Z0-9/+.-]+;base64,/, '');
     const buffer = Buffer.from(base64Content, 'base64');
 
     const isLocal = !process.env.VERCEL && fs.existsSync(path.join(process.cwd(), '.git'));
-    const token = githubToken || process.env.GITHUB_TOKEN;
-    const repo = process.env.GITHUB_REPO || 'Hloni207/Hloni-Portfolio';
+    const { isConfigured } = getGitHubConfig();
 
-    // 1. Write locally if possible
-    if (isLocal || fs.existsSync(path.join(process.cwd(), 'src'))) {
-      const srcMediaDir = path.join(process.cwd(), 'src', 'media');
-      const publicMediaDir = path.join(process.cwd(), 'public', 'media');
+    // In local development, write to disk
+    if (isLocal || fs.existsSync(path.join(process.cwd(), 'public'))) {
+      try {
+        const publicMediaDir = path.join(process.cwd(), 'public', 'media');
+        const srcMediaDir = path.join(process.cwd(), 'src', 'media');
+        if (!fs.existsSync(publicMediaDir)) fs.mkdirSync(publicMediaDir, { recursive: true });
+        if (!fs.existsSync(srcMediaDir)) fs.mkdirSync(srcMediaDir, { recursive: true });
 
-      if (!fs.existsSync(srcMediaDir)) fs.mkdirSync(srcMediaDir, { recursive: true });
-      if (!fs.existsSync(publicMediaDir)) fs.mkdirSync(publicMediaDir, { recursive: true });
-
-      fs.writeFileSync(path.join(srcMediaDir, fileName), buffer);
-      fs.writeFileSync(path.join(publicMediaDir, fileName), buffer);
-
-      // Auto commit and push media to GitHub via local git!
-      if (isLocal) {
-        try {
-          execSync(`git add src/media/${fileName} public/media/${fileName}`, { stdio: 'pipe' });
-          execSync(`git commit -m "chore(media): upload ${fileName} to media folder"`, { stdio: 'pipe' });
-          execSync('git push origin main', { stdio: 'pipe' });
-          console.log(`Pushed ${fileName} to GitHub origin/main successfully!`);
-        } catch (gitErr) {
-          console.warn('Local git auto-commit note:', gitErr.message);
-        }
+        fs.writeFileSync(path.join(publicMediaDir, fileName), buffer);
+        fs.writeFileSync(path.join(srcMediaDir, fileName), buffer);
+      } catch (e) {
+        console.warn('Local disk write warning:', e.message);
       }
     }
 
-    // 2. If running on Vercel or token is available, push directly to GitHub API
-    if (token) {
+    // If GITHUB_TOKEN is configured, commit directly to GitHub repository
+    if (isConfigured) {
+      await commitFileToGitHub({
+        filePath: `public/media/${fileName}`,
+        base64Content,
+        commitMessage: `chore(media): upload ${fileName} to public/media`,
+      });
+      // Also sync to src/media for backwards compatibility
       try {
-        await commitFileToGitHub(repo, `public/media/${fileName}`, base64Content, `chore(media): upload ${fileName}`, token);
-        await commitFileToGitHub(repo, `src/media/${fileName}`, base64Content, `chore(media): upload ${fileName}`, token);
-      } catch (apiErr) {
-        console.warn('GitHub API upload error:', apiErr);
+        await commitFileToGitHub({
+          filePath: `src/media/${fileName}`,
+          base64Content,
+          commitMessage: `chore(media): sync ${fileName} to src/media`,
+        });
+      } catch (e) {
+        // Non-blocking
       }
+    } else if (!isLocal) {
+      // Running on Vercel without GITHUB_TOKEN
+      return res.status(500).json({
+        success: false,
+        error: 'GITHUB_TOKEN_MISSING',
+        message: 'GITHUB_TOKEN environment variable is missing on Vercel. Please add GITHUB_TOKEN to your Vercel Project Settings > Environment Variables so uploaded files can be saved permanently.',
+      });
     }
 
     return res.status(200).json({
       success: true,
       url: `/media/${fileName}`,
       fileName,
+      message: 'Media uploaded and saved successfully.',
     });
   } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({ error: error.message || 'Failed to save file' });
+    console.error('Upload handler error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to upload media',
+    });
   }
 }

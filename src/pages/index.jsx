@@ -1,10 +1,13 @@
 import React from 'react';
+import fs from 'fs';
+import path from 'path';
 import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
 import ProjectsSection from '@/components/ProjectsSection';
 import BackgroundSection from '@/components/BackgroundSection';
 import AboutSection from '@/components/AboutSection';
 import ContactSection from '@/components/ContactSection';
+import { initialPortfolioData } from '@/data/initialData';
 
 export default function Home() {
   return (
@@ -30,4 +33,29 @@ export default function Home() {
       </main>
     </div>
   );
+}
+
+export async function getStaticProps() {
+  let initialData = initialPortfolioData;
+
+  try {
+    const jsonPath = path.join(process.cwd(), 'public', 'data', 'portfolio.json');
+    if (fs.existsSync(jsonPath)) {
+      const raw = fs.readFileSync(jsonPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      initialData = {
+        ...initialPortfolioData,
+        ...parsed,
+      };
+    }
+  } catch (err) {
+    console.warn('getStaticProps portfolio.json read warning:', err.message);
+  }
+
+  return {
+    props: {
+      initialPortfolioData: initialData,
+    },
+    revalidate: 10,
+  };
 }

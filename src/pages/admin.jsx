@@ -4,13 +4,19 @@ import {
   ArrowLeft, Plus, Trash2, Save, FileText, Upload, 
   ExternalLink, Eye, RefreshCw, Download, Sparkles, Briefcase, 
   Layers, User, Mail, CheckCircle2, Image as ImageIcon, ArrowUpRight,
-  Pencil, X, GitBranch, CloudUpload, Loader2, Key, AlertCircle
+  Pencil, X, GitBranch, CloudUpload, Loader2, Key, AlertCircle,
+  Lock, LogOut, Check, Undo2
 } from 'lucide-react';
 import { usePortfolio } from '@/context/PortfolioContext';
 
 export default function AdminPage() {
   const {
     data,
+    publishedData,
+    isLoaded,
+    hasUnpublishedChanges,
+    lastPublished,
+    isPublishing,
     updateProfile,
     updateAbout,
     addProject,
@@ -24,70 +30,101 @@ export default function AdminPage() {
     addContactLink,
     deleteContactLink,
     updateResume,
+    revertDraftToPublished,
     resetToDefaults,
+    publishToGitHub,
     exportData,
-    syncToGitHub,
-    isSyncing,
-    pendingMediaFiles,
-    addPendingMediaFile
   } = usePortfolio();
 
+  // Authentication states
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Navigation & feedback
   const [activeTab, setActiveTab] = useState('work'); // 'work', 'about', 'experience', 'skills', 'contact', 'resume', 'backup', 'github'
   const [saveToast, setSaveToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('Changes saved live!');
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [githubToken, setGithubToken] = useState('');
-  const [syncStatus, setSyncStatus] = useState(null); // { type: 'success' | 'error', message: string }
+  const [publishFeedback, setPublishFeedback] = useState(null); // { type: 'success' | 'error', message, commitUrl, commitSha }
 
-  // Load saved token from localStorage if available
+  // Check auth status on load
   useEffect(() => {
-    try {
-      const savedToken = localStorage.getItem('hloni_github_pat');
-      if (savedToken) setGithubToken(savedToken);
-    } catch (e) {}
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/status');
+        const json = await res.json();
+        setIsAuthenticated(Boolean(json.authenticated));
+      } catch (e) {
+        setIsAuthenticated(false);
+      } finally {
+        setAuthChecked(true);
+      }
+    }
+    checkAuth();
   }, []);
 
-  const saveGithubToken = (token) => {
-    setGithubToken(token);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
     try {
-      if (token) {
-        localStorage.setItem('hloni_github_pat', token);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        setIsAuthenticated(true);
+        setPasswordInput('');
       } else {
-        localStorage.removeItem('hloni_github_pat');
+        setLoginError(result.message || 'Incorrect admin password.');
       }
-      showNotification('GitHub Token saved!');
-    } catch (e) {}
-  };
-
-  const handlePushToGitHub = async () => {
-    setSyncStatus(null);
-    showNotification('Connecting to GitHub...');
-    const res = await syncToGitHub(githubToken);
-    if (res.success) {
-      setSyncStatus({
-        type: 'success',
-        message: res.result?.message || 'Pushed to GitHub! Vercel is now deploying your changes live to the world.'
-      });
-      showNotification('🚀 Successfully published to GitHub & Live Site!');
-    } else {
-      setSyncStatus({
-        type: 'error',
-        message: res.error || 'Failed to sync to GitHub.'
-      });
-      if (res.error?.includes('NO_TOKEN_OR_GIT')) {
-        setActiveTab('github');
-      }
-      showNotification('Sync failed. Please check the GitHub Sync tab.');
+    } catch (err) {
+      setLoginError('Login request failed. Check server connection.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  // Editing states for experiences & projects
-  const [editingExpId, setEditingExpId] = useState(null);
-  const [editExpForm, setEditExpForm] = useState({ name: '', position: '', description: '', date: '', image: '' });
-  const [editingProjId, setEditingProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ title: '', date: '', description: '', image: '', tags: '', link: '' });
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {}
+    setIsAuthenticated(false);
+  };
 
-  // 1. Work Creation Form (Prompted in exact requested order: Name, date, Description, image (stored in src/media), tag, URL link)
+  const showNotification = (msg = 'Changes saved to draft!') => {
+    setToastMessage(msg);
+    setSaveToast(true);
+    setTimeout(() => setSaveToast(false), 3000);
+  };
+
+  const handlePublish = async () => {
+    setPublishFeedback(null);
+    showNotification('Publishing to GitHub repository...');
+    const res = await publishToGitHub();
+    if (res.success) {
+      setPublishFeedback({
+        type: 'success',
+        message: res.result?.message || 'Published to GitHub main branch! Vercel is now deploying your changes live to all visitors.',
+        commitUrl: res.result?.commitUrl,
+        commitSha: res.result?.commitSha?.substring(0, 7),
+      });
+      showNotification('🚀 Successfully published to GitHub & Live Site!');
+    } else {
+      setPublishFeedback({
+        type: 'error',
+        message: res.error || 'Failed to publish to GitHub.',
+      });
+      showNotification('Publish failed. See details below.');
+    }
+  };
+
+  // 1. Work Creation Form
   const [workForm, setWorkForm] = useState({
     name: '',
     date: '2026',
@@ -97,6 +134,12 @@ export default function AdminPage() {
     tag: 'Robotics, Embedded C++, Sensor Fusion',
     url: 'https://github.com/Hloni207',
   });
+
+  // Editing states for experiences & projects
+  const [editingExpId, setEditingExpId] = useState(null);
+  const [editExpForm, setEditExpForm] = useState({ name: '', position: '', description: '', date: '', image: '' });
+  const [editingProjId, setEditingProjId] = useState(null);
+  const [editProjForm, setEditProjForm] = useState({ title: '', date: '', description: '', image: '', tags: '', link: '' });
 
   // 2. About section form
   const [aboutForm, setAboutForm] = useState({
@@ -111,7 +154,24 @@ export default function AdminPage() {
     avatar: data.profile?.avatar || '/media/profileimage.jpg',
   });
 
-  // 3. Experience Form (Name, Position, Description, Date, Image)
+  // Sync aboutForm when data updates
+  useEffect(() => {
+    if (data.aboutSection) {
+      setAboutForm({
+        p1: data.aboutSection.paragraph1 || '',
+        p2: data.aboutSection.paragraph2 || '',
+        p3: data.aboutSection.paragraph3 || '',
+        line1: data.aboutSection.headingLines?.[0] || 'A Robotist man,',
+        line2: data.aboutSection.headingLines?.[1] || 'A productive mind,',
+        line3: data.aboutSection.headingLines?.[2] || 'An explorer',
+        titleTag: data.profile?.titleTag || 'Welcome to my personal Portfolio',
+        bio: data.profile?.bio || '',
+        avatar: data.profile?.avatar || '/media/profileimage.jpg',
+      });
+    }
+  }, [data]);
+
+  // 3. Experience Form
   const [experienceForm, setExperienceForm] = useState({
     name: '',
     position: '',
@@ -135,17 +195,7 @@ export default function AdminPage() {
     iconUrl: '',
   });
 
-  // Resume form
-  const [resumeUrlInput, setResumeUrlInput] = useState(data.profile?.resumeUrl || '/media/resume.pdf');
-  const [resumeFileNameInput, setResumeFileNameInput] = useState(data.profile?.resumeFilename || 'Hloni_Resume.pdf');
-
-  const showNotification = (msg = 'Changes saved live!') => {
-    setToastMessage(msg);
-    setSaveToast(true);
-    setTimeout(() => setSaveToast(false), 2500);
-  };
-
-  // Image upload handler that writes directly to src/media and public/media
+  // Image upload handler
   const handleImageUpload = async (e, targetForm) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -166,30 +216,28 @@ export default function AdminPage() {
         });
 
         const result = await res.json();
-        const finalFileName = result.fileName || `${Date.now()}_${file.name}`;
-        const finalUrl = result.success ? result.url : `/media/${finalFileName}`;
+        if (res.ok && result.success) {
+          const finalUrl = result.url;
+          const finalFileName = result.fileName || file.name;
 
-        // Register for GitHub sync
-        addPendingMediaFile({ name: finalFileName, base64Content: base64Data });
-
-        if (targetForm === 'work') {
-          setWorkForm((prev) => ({
-            ...prev,
-            image: finalUrl,
-            imageFileName: finalFileName,
-          }));
-        } else if (targetForm === 'avatar') {
-          setAboutForm((prev) => ({ ...prev, avatar: finalUrl }));
-          updateProfile({ avatar: finalUrl });
-        } else if (targetForm === 'experience') {
-          setExperienceForm((prev) => ({ ...prev, image: finalUrl }));
+          if (targetForm === 'work') {
+            setWorkForm((prev) => ({
+              ...prev,
+              image: finalUrl,
+              imageFileName: finalFileName,
+            }));
+          } else if (targetForm === 'avatar') {
+            setAboutForm((prev) => ({ ...prev, avatar: finalUrl }));
+            updateProfile({ avatar: finalUrl });
+          } else if (targetForm === 'experience') {
+            setExperienceForm((prev) => ({ ...prev, image: finalUrl }));
+          }
+          showNotification(`Image uploaded and saved! Click 'Publish' to make it live.`);
+        } else {
+          alert(`Image upload error: ${result.message || result.error || 'Failed to upload image.'}`);
         }
-        showNotification(`Image saved! Click "Push to GitHub" to publish live.`);
       } catch (err) {
-        console.error('Upload failed, using data-url', err);
-        if (targetForm === 'work') {
-          setWorkForm((prev) => ({ ...prev, image: uploadEvent.target.result }));
-        }
+        alert(`Upload error: ${err.message}`);
       } finally {
         setUploadingImage(false);
       }
@@ -199,7 +247,7 @@ export default function AdminPage() {
   };
 
   // 1. Submit Work
-  const handleAddWork = async (e) => {
+  const handleAddWork = (e) => {
     e.preventDefault();
     if (!workForm.name.trim()) return alert('Project Name is required');
 
@@ -223,8 +271,7 @@ export default function AdminPage() {
       url: 'https://github.com/Hloni207',
     });
 
-    showNotification('Project published! Pushing to GitHub...');
-    handlePushToGitHub();
+    showNotification('Project added to draft! Click "Publish to Live Site" to deploy.');
   };
 
   // 2. Submit About
@@ -241,8 +288,7 @@ export default function AdminPage() {
       bio: aboutForm.bio,
       avatar: aboutForm.avatar,
     });
-    showNotification('About story updated! Pushing to GitHub...');
-    handlePushToGitHub();
+    showNotification('About story updated in draft! Click "Publish to Live Site" to deploy.');
   };
 
   // 3. Submit Experience
@@ -259,8 +305,7 @@ export default function AdminPage() {
       date: '2026',
       image: '',
     });
-    showNotification('Experience added! Pushing to GitHub...');
-    handlePushToGitHub();
+    showNotification('Experience added to draft! Click "Publish to Live Site" to deploy.');
   };
 
   // Edit Experience handlers
@@ -281,8 +326,7 @@ export default function AdminPage() {
     }
     updateExperience(id, editExpForm);
     setEditingExpId(null);
-    showNotification('Experience updated! Pushing to GitHub...');
-    handlePushToGitHub();
+    showNotification('Experience updated in draft!');
   };
 
   const cancelEditExperience = () => {
@@ -307,8 +351,7 @@ export default function AdminPage() {
     if (!editProjForm.title.trim()) return alert('Project name is required');
     updateProject(id, editProjForm);
     setEditingProjId(null);
-    showNotification('Project updated! Pushing to GitHub...');
-    handlePushToGitHub();
+    showNotification('Project updated in draft!');
   };
 
   const cancelEditProject = () => {
@@ -322,7 +365,7 @@ export default function AdminPage() {
     if (!skillForm.name.trim()) return;
     addSkill(skillForm);
     setSkillForm({ name: '', category: 'Robotics' });
-    showNotification('Skill added!');
+    showNotification('Skill added to draft!');
   };
 
   // 5. Submit Contact Link
@@ -337,7 +380,7 @@ export default function AdminPage() {
       icon: 'globe',
       iconUrl: '',
     });
-    showNotification('Contact link added!');
+    showNotification('Contact link added to draft!');
   };
 
   // Resume PDF upload
@@ -350,9 +393,6 @@ export default function AdminPage() {
     reader.onload = async (uploadEvent) => {
       try {
         const base64Data = uploadEvent.target.result;
-        // Track file for GitHub sync
-        addPendingMediaFile({ name: 'resume.pdf', base64Content: base64Data });
-
         const res = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -362,23 +402,116 @@ export default function AdminPage() {
           }),
         });
         const result = await res.json();
-        const savedUrl = result.success ? result.url : '/media/resume.pdf';
-        updateResume(savedUrl, 'resume.pdf');
-        setResumeUrlInput(savedUrl);
-        setResumeFileNameInput('resume.pdf');
-        showNotification('Resume PDF uploaded! Click "Push to GitHub" to make it live for all devices.');
+        if (res.ok && result.success) {
+          updateResume('/media/resume.pdf', 'resume.pdf');
+          showNotification('Resume PDF uploaded and saved! Click "Publish to Live Site" to deploy.');
+        } else {
+          alert(`Resume upload error: ${result.message || result.error || 'Failed to upload PDF'}`);
+        }
       } catch (err) {
-        updateResume(uploadEvent.target.result, file.name);
-        showNotification('Resume saved locally!');
+        alert(`Resume upload error: ${err.message}`);
       }
     };
     reader.readAsDataURL(file);
   };
 
+  // Loading state while checking authentication
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[#F6F5F1] flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3 text-neutral-600">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-medium">Checking authorization...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── LOGIN SCREEN (Server-side Authentication) ───
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#F6F5F1] text-[#111111] flex flex-col font-sans selection:bg-[#111111] selection:text-white">
+        <header className="w-full pt-8 pb-6 px-6 md:px-12 lg:px-16 flex items-center justify-between border-b border-black/10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 text-sm font-semibold bg-white border border-black/10 hover:border-black px-4 py-2 rounded-full transition-all shadow-sm"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            <span>View Live Site</span>
+          </Link>
+          <span className="text-xs font-semibold tracking-widest uppercase text-neutral-400">
+            Hloni Studio Access
+          </span>
+        </header>
+
+        <main className="flex-1 flex items-center justify-center px-6 py-16">
+          <div className="max-w-md w-full bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-xl space-y-6">
+            <div className="w-12 h-12 rounded-2xl bg-[#111111] text-white flex items-center justify-center mx-auto shadow-md">
+              <Lock className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h1 className="text-2xl font-extrabold tracking-tight text-[#111111]">
+                Portfolio Studio
+              </h1>
+              <p className="text-xs sm:text-sm text-neutral-500">
+                Enter your admin password to manage projects, upload media, and publish to GitHub.
+              </p>
+            </div>
+
+            {loginError && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
+                  Admin Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••••••"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full inline-flex items-center justify-center gap-2 bg-[#111111] hover:bg-neutral-800 text-white py-4 rounded-2xl font-bold text-sm transition-all shadow-md active:scale-98 disabled:opacity-50"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying...</span>
+                  </>
+                ) : (
+                  <span>Unlock Studio</span>
+                )}
+              </button>
+            </form>
+
+            <p className="text-[11px] text-center text-neutral-400">
+              Protected by server-side session authentication.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ─── AUTHENTICATED DASHBOARD ───
   return (
     <div className="min-h-screen bg-[#F6F5F1] text-[#111111] flex flex-col font-sans selection:bg-[#111111] selection:text-white">
       {/* Top Header matching main site aesthetic */}
-      <header className="w-full pt-8 pb-6 px-6 md:px-12 lg:px-16 flex items-center justify-between border-b border-black/10">
+      <header className="w-full pt-8 pb-6 px-6 md:px-12 lg:px-16 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/10">
         <div className="flex items-center gap-6">
           <Link
             href="/"
@@ -387,66 +520,118 @@ export default function AdminPage() {
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
             <span>View Live Site</span>
           </Link>
-          <div className="hidden sm:block">
-            <span className="text-xs font-semibold tracking-widest uppercase text-neutral-400 block">
-              Admin / Studio
-            </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold tracking-widest uppercase text-neutral-400 block">
+                Admin / Studio
+              </span>
+              {hasUnpublishedChanges ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  Unpublished Draft
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Live & Synced
+                </span>
+              )}
+            </div>
             <h1 className="text-xl font-extrabold tracking-tight text-[#111111]">
               Portfolio Editor
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <a
             href="/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-black/10 hover:border-black text-black px-4 py-2 rounded-full transition-all shadow-sm"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-black/10 hover:border-black text-black px-4 py-2.5 rounded-full transition-all shadow-sm"
           >
-            <span>Live Preview</span>
+            <span>Preview</span>
             <ArrowUpRight className="w-3.5 h-3.5" />
           </a>
 
+          {hasUnpublishedChanges && (
+            <button
+              onClick={() => {
+                if (confirm('Discard your local draft and revert to the published live version?')) {
+                  revertDraftToPublished();
+                  showNotification('Draft discarded. Reverted to live version.');
+                }
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-black/10 hover:border-black text-neutral-600 hover:text-black px-4 py-2.5 rounded-full transition-all shadow-sm"
+              title="Discard draft and revert to live version"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              <span>Discard Draft</span>
+            </button>
+          )}
+
           <button
-            onClick={handlePushToGitHub}
-            disabled={isSyncing}
-            className="inline-flex items-center gap-2 text-xs font-bold bg-[#111111] hover:bg-neutral-800 text-white px-5 py-2.5 rounded-full transition-all shadow-md active:scale-95 disabled:opacity-60"
-            title="Commit all changes to GitHub so they appear on all devices worldwide"
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className={`inline-flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-full transition-all shadow-md active:scale-95 disabled:opacity-60 ${
+              hasUnpublishedChanges
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400/50 animate-pulse'
+                : 'bg-[#111111] hover:bg-neutral-800 text-white'
+            }`}
+            title="Publish all content live to GitHub (triggers Vercel deployment)"
           >
-            {isSyncing ? (
+            {isPublishing ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Publishing to GitHub...</span>
               </>
             ) : (
               <>
-                <CloudUpload className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Push to GitHub (Live Site)</span>
+                <CloudUpload className="w-3.5 h-3.5 text-white" />
+                <span>Publish to Live Site</span>
               </>
             )}
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-black/5 transition-colors"
+            title="Log out"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* Sync Status Banner */}
-      {syncStatus && (
-        <div className={`w-full px-6 md:px-12 lg:px-16 py-3 border-b text-xs md:text-sm font-medium flex items-center justify-between ${
-          syncStatus.type === 'success' 
+      {/* Live Publishing Feedback Banner */}
+      {publishFeedback && (
+        <div className={`w-full px-6 md:px-12 lg:px-16 py-3.5 border-b text-xs sm:text-sm font-medium flex items-center justify-between gap-4 ${
+          publishFeedback.type === 'success' 
             ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
-            : 'bg-amber-50 text-amber-900 border-amber-200'
+            : 'bg-red-50 text-red-900 border-red-200'
         }`}>
-          <div className="flex items-center gap-2.5">
-            {syncStatus.type === 'success' ? (
+          <div className="flex items-center gap-2.5 min-w-0">
+            {publishFeedback.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
             )}
-            <span>{syncStatus.message}</span>
+            <span className="truncate">{publishFeedback.message}</span>
+            {publishFeedback.commitUrl && (
+              <a
+                href={publishFeedback.commitUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-bold text-emerald-700 hover:text-emerald-900 flex-shrink-0 inline-flex items-center gap-1"
+              >
+                <span>Commit {publishFeedback.commitSha}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </a>
+            )}
           </div>
           <button 
-            onClick={() => setSyncStatus(null)}
-            className="p-1 rounded hover:bg-black/5 text-neutral-500"
+            onClick={() => setPublishFeedback(null)}
+            className="p-1 rounded hover:bg-black/5 text-neutral-500 flex-shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -463,7 +648,7 @@ export default function AdminPage() {
 
       {/* Main Container */}
       <main className="max-w-6xl w-full mx-auto px-6 md:px-12 lg:px-16 py-10 flex-1">
-        {/* Navigation Tabs Styled to Match Selected Work & Main Aesthetic */}
+        {/* Navigation Tabs */}
         <div className="flex flex-wrap items-center gap-2 pb-8 border-b border-black/10">
           {[
             { id: 'work', label: '01 / Work & Projects', icon: Layers },
@@ -494,7 +679,7 @@ export default function AdminPage() {
           })}
         </div>
 
-        {/* TAB 1: WORK & PROJECTS (Refined to prompt: Name, date, Description, image (src/media), tag, URL link) */}
+        {/* TAB 1: WORK & PROJECTS */}
         {activeTab === 'work' && (
           <div className="mt-10 space-y-12">
             <div className="bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-sm space-y-8">
@@ -506,7 +691,7 @@ export default function AdminPage() {
                   Add New Project
                 </h2>
                 <p className="text-sm text-neutral-500 mt-1 max-w-xl">
-                  Uploaded images are stored directly in <code className="bg-black/5 px-2 py-0.5 rounded text-neutral-800 font-mono text-xs">src/media</code> and served automatically across your website.
+                  Uploaded project images are committed directly to your repository in <code className="bg-black/5 px-2 py-0.5 rounded text-neutral-800 font-mono text-xs">public/media</code> and served automatically across your website.
                 </p>
               </div>
 
@@ -519,7 +704,7 @@ export default function AdminPage() {
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Autonomous Robotic Rover"
+                      placeholder="e.g. CAMPUS SAFETY"
                       value={workForm.name}
                       onChange={(e) => setWorkForm({ ...workForm, name: e.target.value })}
                       className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
@@ -549,7 +734,7 @@ export default function AdminPage() {
                   </label>
                   <textarea
                     rows={4}
-                    placeholder="Provide full details of what you engineered, microcontrollers used, algorithms, challenges, and results..."
+                    placeholder="Provide full details of what you engineered, algorithms, microcontrollers used, challenges, and results..."
                     value={workForm.description}
                     onChange={(e) => setWorkForm({ ...workForm, description: e.target.value })}
                     className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm leading-relaxed"
@@ -557,20 +742,20 @@ export default function AdminPage() {
                   />
                 </div>
 
-                {/* 4. Image (stored in src/media) */}
+                {/* 4. Image with Real-Time Preview */}
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
-                    4. Image (saved in src/media) *
+                    4. Image *
                   </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                     <label className="flex items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-black/20 hover:border-black cursor-pointer bg-[#F6F5F1] transition-colors text-center">
                       <Upload className="w-5 h-5 text-neutral-500" />
                       <div className="text-left">
                         <span className="text-xs font-bold text-neutral-800 block">
-                          {uploadingImage ? 'Uploading to src/media...' : 'Upload Image File'}
+                          {uploadingImage ? 'Uploading & saving...' : 'Upload Image File'}
                         </span>
                         <span className="text-[11px] text-neutral-400 block">
-                          Saves file to src/media automatically
+                          Commits file to public/media on GitHub
                         </span>
                       </div>
                       <input
@@ -581,18 +766,45 @@ export default function AdminPage() {
                       />
                     </label>
 
-                    <div>
+                    <div className="space-y-2">
                       <input
                         type="text"
-                        placeholder="Or type path: /media/profileimage.jpg"
+                        placeholder="Or type path: /media/project-image.jpg"
                         value={workForm.image}
                         onChange={(e) => setWorkForm({ ...workForm, image: e.target.value })}
                         className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
                       />
+
+                      {/* Real Image Preview */}
                       {workForm.image && (
-                        <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-medium">
-                          ✓ Image set: {workForm.imageFileName || workForm.image}
-                        </p>
+                        <div className="flex items-center gap-3 p-3 bg-[#F6F5F1] rounded-2xl border border-black/10">
+                          <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-200 border border-black/10 flex-shrink-0">
+                            <img
+                              src={workForm.image}
+                              alt="Uploaded Preview"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.src = '/media/profileimage.jpg';
+                              }}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-bold text-neutral-800 block truncate">
+                              {workForm.imageFileName || workForm.image}
+                            </span>
+                            <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Image attached
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setWorkForm((prev) => ({ ...prev, image: '', imageFileName: '' }))}
+                            className="p-1.5 text-neutral-400 hover:text-red-500 rounded-full hover:bg-white transition-colors"
+                            title="Remove image"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -606,7 +818,7 @@ export default function AdminPage() {
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. C++, ROS2, PCB Design, Computer Vision"
+                      placeholder="e.g. Mobile App, Careers, Robotics"
                       value={workForm.tag}
                       onChange={(e) => setWorkForm({ ...workForm, tag: e.target.value })}
                       className="w-full px-5 py-3.5 rounded-2xl bg-[#F6F5F1] border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-medium"
@@ -629,13 +841,13 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 flex justify-end">
+                <div className="pt-4 flex justify-end gap-3">
                   <button
                     type="submit"
                     className="inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-8 py-4 rounded-full font-semibold text-sm transition-all shadow-md hover:shadow-lg"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Publish Work</span>
+                    <span>Save Project to Draft</span>
                   </button>
                 </div>
               </form>
@@ -646,10 +858,10 @@ export default function AdminPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold text-[#111111]">
-                    Published Projects ({data.projects?.length || 0})
+                    Portfolio Projects ({data.projects?.length || 0})
                   </h3>
                   <p className="text-xs text-neutral-500 mt-0.5">
-                    Live works currently displayed in Section 01 (Portfolio). Click the pencil to edit.
+                    Click the pencil to edit any project. Remember to click "Publish to Live Site" to deploy.
                   </p>
                 </div>
               </div>
@@ -807,8 +1019,7 @@ export default function AdminPage() {
                               onClick={() => {
                                 if (confirm(`Delete "${proj.title}"?`)) {
                                   deleteProject(proj.id);
-                                  showNotification('Project removed! Pushing to GitHub...');
-                                  handlePushToGitHub();
+                                  showNotification('Project removed from draft!');
                                 }
                               }}
                               className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
@@ -863,7 +1074,7 @@ export default function AdminPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="inline-flex items-center gap-2 bg-white text-black border border-black/20 hover:border-black text-xs font-semibold px-4 py-2 rounded-full cursor-pointer transition-all shadow-sm">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>Upload New Image</span>
+                      <span>{uploadingImage ? 'Uploading...' : 'Upload New Photo'}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -979,9 +1190,6 @@ export default function AdminPage() {
                 <h2 className="text-3xl font-extrabold tracking-tight text-[#111111]">
                   Add Experience
                 </h2>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Prompted with typing input fields for Name, Position, Description, Date, and Image.
-                </p>
               </div>
 
               <form onSubmit={handleAddExperience} className="space-y-6">
@@ -1032,17 +1240,17 @@ export default function AdminPage() {
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 mb-2">
-                      Image (saved in src/media)
+                      Image (saved in public/media)
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                       <label className="flex items-center justify-center gap-3 p-6 rounded-2xl border-2 border-dashed border-black/20 hover:border-black cursor-pointer bg-[#F6F5F1] transition-colors text-center">
                         <Upload className="w-5 h-5 text-neutral-500" />
                         <div className="text-left">
                           <span className="text-xs font-bold text-neutral-800 block">
-                            {uploadingImage ? 'Uploading to src/media...' : 'Upload Image File'}
+                            {uploadingImage ? 'Uploading...' : 'Upload Image'}
                           </span>
                           <span className="text-[11px] text-neutral-400 block">
-                            Saves file to src/media automatically
+                            Commits to public/media
                           </span>
                         </div>
                         <input
@@ -1063,7 +1271,7 @@ export default function AdminPage() {
                         />
                         {experienceForm.image && (
                           <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-medium">
-                            ✓ Image set: {experienceForm.image}
+                            <Check className="w-3 h-3" /> Image set: {experienceForm.image}
                           </p>
                         )}
                       </div>
@@ -1091,7 +1299,7 @@ export default function AdminPage() {
                     className="inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-8 py-4 rounded-full font-semibold text-sm transition-all shadow-md"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add Experience</span>
+                    <span>Save Experience to Draft</span>
                   </button>
                 </div>
               </form>
@@ -1169,58 +1377,14 @@ export default function AdminPage() {
                             </div>
                             <div>
                               <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
-                                Image
+                                Image URL
                               </label>
-                              <div className="flex flex-col gap-2">
-                                <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-black/20 hover:border-black cursor-pointer bg-white transition-colors">
-                                  <Upload className="w-4 h-4 text-neutral-500" />
-                                  <span className="text-xs font-semibold text-neutral-700">
-                                    {uploadingImage ? 'Uploading...' : 'Upload Image'}
-                                  </span>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={async (e) => {
-                                      const file = e.target.files?.[0];
-                                      if (!file) return;
-                                      setUploadingImage(true);
-                                      const reader = new FileReader();
-                                      reader.onload = async (ev) => {
-                                        try {
-                                          const res = await fetch('/api/upload', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ name: file.name, base64Data: ev.target.result }),
-                                          });
-                                          const result = await res.json();
-                                          if (result.success) {
-                                            setEditExpForm(prev => ({ ...prev, image: result.url }));
-                                            showNotification(`Image saved to src/media/${result.fileName}`);
-                                          }
-                                        } catch (err) {
-                                          setEditExpForm(prev => ({ ...prev, image: ev.target.result }));
-                                        } finally {
-                                          setUploadingImage(false);
-                                        }
-                                      };
-                                      reader.readAsDataURL(file);
-                                    }}
-                                    className="hidden"
-                                  />
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="Or type path: /media/image.jpg"
-                                  value={editExpForm.image}
-                                  onChange={(e) => setEditExpForm({ ...editExpForm, image: e.target.value })}
-                                  className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
-                                />
-                                {editExpForm.image && (
-                                  <p className="text-xs text-emerald-600 flex items-center gap-1 font-medium">
-                                    ✓ {editExpForm.image}
-                                  </p>
-                                )}
-                              </div>
+                              <input
+                                type="text"
+                                value={editExpForm.image}
+                                onChange={(e) => setEditExpForm({ ...editExpForm, image: e.target.value })}
+                                className="w-full px-4 py-3 rounded-xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
+                              />
                             </div>
                           </div>
 
@@ -1287,8 +1451,7 @@ export default function AdminPage() {
                               onClick={() => {
                                 if (confirm(`Delete "${exp.name}"?`)) {
                                   deleteExperience(exp.id);
-                                  showNotification('Experience removed! Pushing to GitHub...');
-                                  handlePushToGitHub();
+                                  showNotification('Experience removed from draft!');
                                 }
                               }}
                               className="p-2.5 text-neutral-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"
@@ -1387,9 +1550,6 @@ export default function AdminPage() {
                 <h2 className="text-3xl font-extrabold tracking-tight text-[#111111]">
                   Contact Channels
                 </h2>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Configured with your GitHub, LinkedIn, WhatsApp (064 007 5521), and Email (rachoshithlonolofatso@gmail.com).
-                </p>
               </div>
 
               <form onSubmit={handleAddContact} className="space-y-6">
@@ -1457,7 +1617,7 @@ export default function AdminPage() {
                     className="inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-8 py-4 rounded-full font-semibold text-sm transition-all shadow-md"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add Channel</span>
+                    <span>Save Channel to Draft</span>
                   </button>
                 </div>
               </form>
@@ -1512,7 +1672,7 @@ export default function AdminPage() {
                 Resume PDF Manager
               </h2>
               <p className="text-xs text-neutral-500 mt-1">
-                Your full resume is stored at <code className="bg-black/5 px-2 py-0.5 rounded font-mono text-neutral-800">src/media/resume.pdf</code> and served as <code className="bg-black/5 px-2 py-0.5 rounded font-mono text-neutral-800">/media/resume.pdf</code>.
+                Your full resume is stored at <code className="bg-black/5 px-2 py-0.5 rounded font-mono text-neutral-800">public/media/resume.pdf</code> and served live across all devices.
               </p>
             </div>
 
@@ -1551,7 +1711,7 @@ export default function AdminPage() {
                   Click to Upload or Replace Resume (PDF)
                 </span>
                 <span className="text-xs text-neutral-400 block mt-1">
-                  Saves directly to src/media/resume.pdf
+                  Commits directly to public/media/resume.pdf on GitHub
                 </span>
                 <input
                   type="file"
@@ -1560,23 +1720,11 @@ export default function AdminPage() {
                   className="hidden"
                 />
               </label>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={handlePushToGitHub}
-                  disabled={isSyncing}
-                  className="inline-flex items-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-7 py-3.5 rounded-full font-semibold text-sm transition-all shadow-md disabled:opacity-60"
-                >
-                  {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4 text-emerald-400" />}
-                  <span>Push Resume to GitHub (Live Site)</span>
-                </button>
-              </div>
             </div>
           </div>
         )}
 
-        {/* TAB 7: BACKUP & SYNC */}
+        {/* TAB 7: BACKUP & EXPORT */}
         {activeTab === 'backup' && (
           <div className="mt-10 bg-white rounded-3xl p-8 md:p-10 border border-black/10 shadow-sm space-y-8">
             <div>
@@ -1644,7 +1792,7 @@ export default function AdminPage() {
                 Sync to GitHub & Live Site
               </h2>
               <p className="text-sm text-neutral-600 mt-1 max-w-2xl leading-relaxed">
-                When you make edits, add projects, or upload a resume in this admin panel, click <strong>Push to GitHub</strong> to commit all changes directly to your repository (<code>Hloni207/Hloni-Portfolio</code>). Vercel then automatically rebuilds and deploys them to <code>hloni.vercel.app</code> so every visitor on any phone or computer sees them!
+                When you make edits, add projects, or upload a resume in this admin panel, click <strong>Publish to Live Site</strong> to commit all changes directly to your GitHub repository (<code>Hloni207/Hloni-Portfolio</code>). Vercel then automatically rebuilds and deploys them to <code>hloni.vercel.app</code> so every visitor on any phone or computer sees them!
               </p>
             </div>
 
@@ -1653,7 +1801,7 @@ export default function AdminPage() {
               <div className="space-y-1">
                 <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Repository: Hloni207/Hloni-Portfolio
+                  Repository: Hloni207/Hloni-Portfolio • Branch: main
                 </span>
                 <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
                   Publish All Content Live
@@ -1663,83 +1811,89 @@ export default function AdminPage() {
                 </p>
               </div>
 
-              <button
-                onClick={handlePushToGitHub}
-                disabled={isSyncing}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-white text-black hover:bg-neutral-200 px-8 py-4 rounded-full font-bold text-sm sm:text-base transition-all shadow-lg active:scale-95 disabled:opacity-50 flex-shrink-0"
-              >
-                {isSyncing ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin text-black" />
-                    <span>Publishing to GitHub...</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudUpload className="w-5 h-5 text-emerald-600" />
-                    <span>Push to GitHub Now</span>
-                  </>
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                {hasUnpublishedChanges && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Discard your local draft and revert to the live published version?')) {
+                        revertDraftToPublished();
+                        showNotification('Draft discarded.');
+                      }
+                    }}
+                    className="w-full sm:w-auto px-6 py-4 rounded-full text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
+                  >
+                    Discard Draft
+                  </button>
                 )}
-              </button>
+
+                <button
+                  onClick={handlePublish}
+                  disabled={isPublishing}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-white text-black hover:bg-neutral-200 px-8 py-4 rounded-full font-bold text-sm sm:text-base transition-all shadow-lg active:scale-95 disabled:opacity-50 flex-shrink-0"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin text-black" />
+                      <span>Publishing to GitHub...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CloudUpload className="w-5 h-5 text-emerald-600" />
+                      <span>Publish Changes to Live Site</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Token Configuration for Mobile & Remote Device Access */}
-            <div className="p-6 md:p-8 rounded-2xl bg-[#F6F5F1] border border-black/10 space-y-6">
+            {/* Vercel Environment Setup Instructions Card */}
+            <div className="p-6 md:p-8 rounded-2xl bg-[#F6F5F1] border border-black/10 space-y-5">
               <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-black/5 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <Key className="w-5 h-5 text-neutral-700" />
                 </div>
                 <div>
                   <h4 className="text-base font-bold text-neutral-900">
-                    GitHub Personal Access Token (For Mobile / Remote Devices)
+                    Vercel Environment Setup Guide
                   </h4>
                   <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                    If you are editing from your phone or another computer (on Vercel), enter your GitHub Token once. It allows your browser to commit changes directly to your GitHub repo without needing a local Git installation!
+                    Publishing from Vercel is powered securely on the server using environment variables. Your GitHub token is never exposed to visitors or client browsers.
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (GitHub Classic Token with 'repo' scope)"
-                  value={githubToken}
-                  onChange={(e) => setGithubToken(e.target.value)}
-                  className="flex-1 px-5 py-3.5 rounded-2xl bg-white border border-black/10 focus:outline-none focus:ring-2 focus:ring-black text-sm font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => saveGithubToken(githubToken)}
-                  className="inline-flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-neutral-800 px-6 py-3.5 rounded-2xl font-semibold text-sm transition-all shadow-sm"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Token</span>
-                </button>
-                {githubToken && (
-                  <button
-                    type="button"
-                    onClick={() => saveGithubToken('')}
-                    className="px-4 py-3.5 rounded-2xl border border-black/10 text-neutral-500 hover:text-red-600 text-xs font-semibold"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <div className="p-4 rounded-xl bg-white border border-black/10 space-y-3 text-xs text-neutral-700">
+                <p className="font-bold text-neutral-900 uppercase tracking-wider text-[11px]">
+                  Required Vercel Environment Variables:
+                </p>
+                <div className="space-y-2 font-mono text-[11px]">
+                  <div className="p-2.5 rounded-lg bg-black/5 flex items-center justify-between">
+                    <span><strong>GITHUB_TOKEN</strong> = ghp_yourPersonalAccessTokenHere</span>
+                    <span className="text-[10px] text-neutral-400 font-sans">Contents: Read and Write</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/5 flex items-center justify-between">
+                    <span><strong>GITHUB_OWNER</strong> = Hloni207</span>
+                    <span className="text-[10px] text-neutral-400 font-sans">Optional (defaults to Hloni207)</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/5 flex items-center justify-between">
+                    <span><strong>GITHUB_REPO</strong> = Hloni-Portfolio</span>
+                    <span className="text-[10px] text-neutral-400 font-sans">Optional (defaults to Hloni-Portfolio)</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/5 flex items-center justify-between">
+                    <span><strong>ADMIN_PASSWORD</strong> = yourSecretPassword</span>
+                    <span className="text-[10px] text-neutral-400 font-sans">Defaults to hloni2026</span>
+                  </div>
+                </div>
 
-              {/* Instructions Guide */}
-              <div className="pt-4 border-t border-black/10 text-xs text-neutral-600 space-y-2">
-                <p className="font-bold text-neutral-800 uppercase tracking-wider">
-                  How to generate your free GitHub Token in 30 seconds:
-                </p>
-                <ol className="list-decimal list-inside space-y-1 pl-1">
-                  <li>
-                    Open <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-black">github.com/settings/tokens/new</a>
-                  </li>
-                  <li>Give it a note like <strong>Portfolio CMS</strong> and check the <strong>repo</strong> box (Full control of repositories).</li>
-                  <li>Scroll down and click <strong>Generate token</strong>, then copy and paste it into the box above.</li>
-                </ol>
-                <p className="text-[11px] text-neutral-400 mt-2">
-                  * Note: When running on your local computer via <code>npm run dev</code>, your local Git is used automatically without requiring a token!
-                </p>
+                <div className="pt-2 text-neutral-600 space-y-1.5 text-xs">
+                  <p className="font-semibold text-neutral-900">How to add in Vercel:</p>
+                  <ol className="list-decimal list-inside space-y-1 pl-1">
+                    <li>Go to <a href="https://vercel.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-black">vercel.com/dashboard</a> and select your project.</li>
+                    <li>Click <strong>Settings</strong> → <strong>Environment Variables</strong>.</li>
+                    <li>Add <strong>GITHUB_TOKEN</strong> with your GitHub token value.</li>
+                    <li>Redeploy or make a commit, and live publishing from any device will work seamlessly!</li>
+                  </ol>
+                </div>
               </div>
             </div>
           </div>

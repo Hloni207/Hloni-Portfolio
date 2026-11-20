@@ -5,7 +5,7 @@ import { PortfolioProvider } from '@/context/PortfolioContext';
 
 export default function App({ Component, pageProps }) {
   return (
-    <PortfolioProvider>
+    <PortfolioProvider initialData={pageProps?.initialPortfolioData}>
       <Head>
         <title>Hloni — Portfolio</title>
         <meta name="description" content="Personal portfolio of Hloni — Robotics, Engineering & Digital Products" />
